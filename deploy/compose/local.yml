@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bloop
+      POSTGRES_PASSWORD: bloop
+      POSTGRES_DB: bloop_control_plane
+    ports:
+      - "35432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

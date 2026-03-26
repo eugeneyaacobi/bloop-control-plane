@@ -1,0 +1,61 @@
+package service
+
+import (
+	"context"
+	"strconv"
+
+	"bloop-control-plane/internal/models"
+	"bloop-control-plane/internal/repository"
+	"bloop-control-plane/internal/runtime"
+)
+
+type CustomerService struct {
+	repo    repository.CustomerRepository
+	runtime runtime.Repository
+}
+
+func NewCustomerService(repo repository.CustomerRepository, runtimeRepo runtime.Repository) *CustomerService {
+	if runtimeRepo == nil {
+		runtimeRepo = runtime.NewStubRepository()
+	}
+	return &CustomerService{repo: repo, runtime: runtimeRepo}
+}
+
+type CustomerWorkspaceResponse struct {
+	AccountName     string             `json:"accountName"`
+	TunnelSummary   string             `json:"tunnelSummary"`
+	Tunnels         []models.Tunnel    `json:"tunnels"`
+	RecentActivity  []runtime.Activity `json:"recentActivity,omitempty"`
+	RuntimeSnapshot runtime.AccountProjection `json:"runtimeSnapshot"`
+}
+
+func (s *CustomerService) GetWorkspace(ctx context.Context, accountID string) (*CustomerWorkspaceResponse, error) {
+	account, tunnels, err := s.repo.GetWorkspace(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	projection, err := s.runtime.ProjectAccount(ctx, account, tunnels)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CustomerWorkspaceResponse{
+		AccountName:     account.DisplayName,
+		TunnelSummary:   summaryString(projection.ActiveRoutes, projection.ProtectedRoutes, projection.DegradedRoutes),
+		Tunnels:         tunnels,
+		RecentActivity:  projection.RecentActivity,
+		RuntimeSnapshot: projection,
+	}, nil
+}
+
+func (s *CustomerService) ListTunnels(ctx context.Context, accountID string) ([]models.Tunnel, error) {
+	return s.repo.ListTunnels(ctx, accountID)
+}
+
+func (s *CustomerService) GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error) {
+	return s.repo.GetTunnelByID(ctx, accountID, tunnelID)
+}
+
+func summaryString(total, protected, degraded int) string {
+	return strconv.Itoa(total) + " active routes / " + strconv.Itoa(protected) + " protected / " + strconv.Itoa(degraded) + " degraded"
+}

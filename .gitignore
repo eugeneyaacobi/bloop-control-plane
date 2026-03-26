@@ -1,0 +1,12 @@
+bin/
+dist/
+coverage.out
+.env
+.env.*
+*.local.yaml
+*.local.yml
+*.secret.yaml
+*.secret.yml
+*.log
+.tmp/
+.DS_Store

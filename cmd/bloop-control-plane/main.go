@@ -1,0 +1,90 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+
+	"bloop-control-plane/internal/api"
+	"bloop-control-plane/internal/audit"
+	"bloop-control-plane/internal/config"
+	"bloop-control-plane/internal/db"
+	"bloop-control-plane/internal/db/migrations"
+	"bloop-control-plane/internal/logging"
+	"bloop-control-plane/internal/repository"
+	"bloop-control-plane/internal/service"
+	"bloop-control-plane/pkg/version"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Printf("bloop-control-plane %s (%s) %s\n", version.Version, version.Commit, version.Date)
+		return
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
+		os.Exit(1)
+	}
+
+	logger := logging.New(cfg.LogLevel)
+	var customerRepo repository.CustomerRepository
+	var adminRepo repository.AdminRepository
+	var onboardingRepo repository.OnboardingRepository
+	var signupRepo repository.SignupRepository
+	var sessionRepo repository.SessionRepository
+	var signupService *service.SignupService
+	ready := false
+	if cfg.DatabaseURL != "" {
+		pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "connect db: %v\n", err)
+			os.Exit(1)
+		}
+		defer pool.Close()
+
+		migrationDir := filepath.Join("internal", "db", "migrations")
+		if err := migrations.Apply(context.Background(), pool, migrationDir); err != nil {
+			fmt.Fprintf(os.Stderr, "apply migrations: %v\n", err)
+			os.Exit(1)
+		}
+		if err := db.Seed(context.Background(), pool); err != nil {
+			fmt.Fprintf(os.Stderr, "seed db: %v\n", err)
+			os.Exit(1)
+		}
+		logger.Info("database connected and seeded")
+		customerRepo = repository.NewPostgresCustomerRepository(pool)
+		adminRepo = repository.NewPostgresAdminRepository(pool)
+		onboardingRepo = repository.NewPostgresOnboardingRepository(pool)
+		signupRepo = repository.NewPostgresSignupRepository(pool)
+		sessionRepo = repository.NewPostgresSessionRepository(pool)
+		runtimeRepo := repository.NewPostgresRuntimeRepository(pool)
+		auditRecorder := audit.New(pool)
+		emailService := service.NewEmailService(cfg)
+		signupService = service.NewSignupService(signupRepo, emailService, auditRecorder, cfg)
+		ready = true
+
+		router := api.NewRouter(api.RouterDeps{
+			CustomerRepo:   customerRepo,
+			AdminRepo:      adminRepo,
+			OnboardingRepo: onboardingRepo,
+			SessionRepo:    sessionRepo,
+			RuntimeRepo:    runtimeRepo,
+			SignupService:  signupService,
+			Config:         cfg,
+			IsReady:        func() bool { return ready },
+		})
+		logger.Info("control plane starting", "listen_addr", cfg.ListenAddr, "smtp_host", logging.Redact(cfg.SMTPHost), "prototype_mode", cfg.PrototypeMode, "dev_auth_fallback", cfg.AllowDevAuthFallback)
+		if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
+			fmt.Fprintf(os.Stderr, "server failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	logger.Warn("starting without database connection is not supported for signup/onboarding plumbing")
+	os.Exit(1)
+}

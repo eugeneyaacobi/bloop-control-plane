@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bloop
+      POSTGRES_PASSWORD: bloop
+      POSTGRES_DB: bloop_control_plane
+    ports:
+      - "35432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "38025:8025"
+      - "31025:1025"
+
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      DATABASE_URL: postgres://bloop:bloop@postgres:5432/bloop_control_plane?sslmode=disable
+      LISTEN_ADDR: :8081
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: noreply@bloop.to
+      VERIFICATION_TOKEN_TTL_SECONDS: 3600
+      SESSION_SECRET: dev-full-stack-session-secret
+      ALLOW_DEV_AUTH_FALLBACK: "false"
+    ports:
+      - "38081:8081"
+    depends_on:
+      - postgres
+      - mailpit
+
+volumes:
+  pgdata:

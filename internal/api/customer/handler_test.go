@@ -1,0 +1,161 @@
+package customer
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"bloop-control-plane/internal/models"
+	"bloop-control-plane/internal/service"
+	"bloop-control-plane/internal/session"
+	"github.com/go-chi/chi/v5"
+)
+
+type fakeCustomerRepo struct {
+	workspaceAccount models.Account
+	workspaceTunnels []models.Tunnel
+	listTunnels      []models.Tunnel
+	tunnel           *models.Tunnel
+	lastAccountID    string
+	err              error
+}
+
+func (f *fakeCustomerRepo) GetWorkspace(ctx context.Context, accountID string) (models.Account, []models.Tunnel, error) {
+	f.lastAccountID = accountID
+	if f.err != nil {
+		return models.Account{}, nil, f.err
+	}
+	return f.workspaceAccount, f.workspaceTunnels, nil
+}
+
+func (f *fakeCustomerRepo) ListTunnels(ctx context.Context, accountID string) ([]models.Tunnel, error) {
+	f.lastAccountID = accountID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.listTunnels, nil
+}
+
+func (f *fakeCustomerRepo) GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error) {
+	f.lastAccountID = accountID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.tunnel, nil
+}
+
+func withCustomerSession(req *http.Request, accountID string) *http.Request {
+	return req.WithContext(session.NewContext(req.Context(), session.Context{UserID: "user_test", AccountID: accountID, Role: "customer"}))
+}
+
+func TestWorkspaceReturnsJSON(t *testing.T) {
+	repo := &fakeCustomerRepo{workspaceAccount: models.Account{ID: "acct_default", DisplayName: "Gene / default-org"}, workspaceTunnels: []models.Tunnel{{ID: "api", Hostname: "api.bloop.to", Access: "public"}}}
+	h := &Handler{Service: service.NewCustomerService(repo, nil)}
+	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/workspace", nil), "acct_from_header")
+	w := httptest.NewRecorder()
+
+	h.Workspace(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d got %d", http.StatusOK, w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected application/json got %q", got)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["accountName"] != "Gene / default-org" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if repo.lastAccountID != "acct_from_header" {
+		t.Fatalf("expected session account id to be used, got %q", repo.lastAccountID)
+	}
+}
+
+func TestWorkspaceReturns500OnServiceError(t *testing.T) {
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: errors.New("boom")}, nil)}
+	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/workspace", nil), "acct_default")
+	w := httptest.NewRecorder()
+
+	h.Workspace(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+func TestTunnelsReturnsJSON(t *testing.T) {
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{listTunnels: []models.Tunnel{{ID: "api", Hostname: "api.bloop.to"}}}, nil)}
+	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels", nil), "acct_default")
+	w := httptest.NewRecorder()
+
+	h.Tunnels(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d got %d", http.StatusOK, w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected application/json got %q", got)
+	}
+}
+
+func TestCustomerHandlersRequireSession(t *testing.T) {
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
+	for _, fn := range []func(http.ResponseWriter, *http.Request){h.Workspace, h.Tunnels} {
+		w := httptest.NewRecorder()
+		fn(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected %d got %d", http.StatusUnauthorized, w.Code)
+		}
+	}
+}
+
+func TestTunnelDetailPaths(t *testing.T) {
+	good := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{tunnel: &models.Tunnel{ID: "api", Hostname: "api.bloop.to"}}, nil)}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "api")
+	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels/api", nil), "acct_default")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+	good.TunnelDetail(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d got %d", http.StatusOK, w.Code)
+	}
+
+	badReq := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels/../../bad", nil), "acct_default")
+	badCtx := chi.NewRouteContext()
+	badCtx.URLParams.Add("id", "../../bad")
+	badReq = badReq.WithContext(context.WithValue(badReq.Context(), chi.RouteCtxKey, badCtx))
+	badW := httptest.NewRecorder()
+	good.TunnelDetail(badW, badReq)
+	if badW.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d got %d", http.StatusBadRequest, badW.Code)
+	}
+
+	notFound := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{tunnel: nil}, nil)}
+	nfReq := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels/missing", nil), "acct_default")
+	nfCtx := chi.NewRouteContext()
+	nfCtx.URLParams.Add("id", "missing")
+	nfReq = nfReq.WithContext(context.WithValue(nfReq.Context(), chi.RouteCtxKey, nfCtx))
+	nfW := httptest.NewRecorder()
+	notFound.TunnelDetail(nfW, nfReq)
+	if nfW.Code != http.StatusNotFound {
+		t.Fatalf("expected %d got %d", http.StatusNotFound, nfW.Code)
+	}
+
+	broken := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: errors.New("boom")}, nil)}
+	errReq := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels/api", nil), "acct_default")
+	errCtx := chi.NewRouteContext()
+	errCtx.URLParams.Add("id", "api")
+	errReq = errReq.WithContext(context.WithValue(errReq.Context(), chi.RouteCtxKey, errCtx))
+	errW := httptest.NewRecorder()
+	broken.TunnelDetail(errW, errReq)
+	if errW.Code != http.StatusInternalServerError {
+		t.Fatalf("expected %d got %d", http.StatusInternalServerError, errW.Code)
+	}
+}
