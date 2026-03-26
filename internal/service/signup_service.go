@@ -11,23 +11,28 @@ import (
 	"bloop-control-plane/internal/config"
 	"bloop-control-plane/internal/repository"
 	"bloop-control-plane/internal/security"
+	"bloop-control-plane/internal/session"
 )
 
 type SignupService struct {
-	repo  repository.SignupRepository
-	email VerificationEmailSender
-	audit *audit.Recorder
-	cfg   *config.Config
-	nowFn func() time.Time
+	repo         repository.SignupRepository
+	email        VerificationEmailSender
+	audit        *audit.Recorder
+	cfg          *config.Config
+	issuer       *session.Issuer
+	provisioning repository.ProvisioningRepository
+	nowFn        func() time.Time
 }
 
-func NewSignupService(repo repository.SignupRepository, email VerificationEmailSender, audit *audit.Recorder, cfg *config.Config) *SignupService {
+func NewSignupService(repo repository.SignupRepository, email VerificationEmailSender, audit *audit.Recorder, cfg *config.Config, issuer *session.Issuer, provisioning repository.ProvisioningRepository) *SignupService {
 	return &SignupService{
-		repo:  repo,
-		email: email,
-		audit: audit,
-		cfg:   cfg,
-		nowFn: func() time.Time { return time.Now().UTC() },
+		repo:         repo,
+		email:        email,
+		audit:        audit,
+		cfg:          cfg,
+		issuer:       issuer,
+		provisioning: provisioning,
+		nowFn:        func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -47,6 +52,14 @@ const (
 type SignupVerifyResponse struct {
 	Verified bool               `json:"verified"`
 	Status   SignupVerifyStatus `json:"status"`
+	Session  *SessionIssue      `json:"session,omitempty"`
+}
+
+type SessionIssue struct {
+	Token      string          `json:"token,omitempty"`
+	CookieName string          `json:"cookieName,omitempty"`
+	ExpiresAt  string          `json:"expiresAt,omitempty"`
+	Context    *session.Context `json:"context,omitempty"`
 }
 
 func (s *SignupService) RequestSignup(ctx context.Context, email string) (*SignupRequestResponse, error) {
@@ -96,12 +109,41 @@ func (s *SignupService) VerifySignup(ctx context.Context, rawToken string) (*Sig
 		return &SignupVerifyResponse{Verified: false, Status: SignupVerifyStatusExpired}, nil
 	}
 	if verification.State != "pending" {
-		return &SignupVerifyResponse{Verified: false, Status: SignupVerifyStatusUsed}, nil
+		resp := &SignupVerifyResponse{Verified: false, Status: SignupVerifyStatusUsed}
+		if s.issuer != nil && s.provisioning != nil {
+			if existing, err := s.provisioning.FindProvisionedIdentityByEmail(ctx, signup.Email); err == nil && existing != nil {
+				sessCtx := session.Context{UserID: existing.UserID, AccountID: existing.AccountID, Role: existing.Role, Prototype: false}
+				if token, expiresAt, err := s.issuer.Issue(sessCtx, now); err == nil {
+					resp.Session = &SessionIssue{Token: token, CookieName: s.issuer.CookieName(), ExpiresAt: expiresAt.UTC().Format(time.RFC3339), Context: &sessCtx}
+				}
+			}
+		}
+		return resp, nil
 	}
 	if err := s.repo.MarkVerificationCompleted(ctx, verification.ID, signup.ID, now); err != nil {
 		return nil, err
 	}
 	meta, _ := json.Marshal(map[string]any{"email": signup.Email, "status": "verified"})
 	_ = s.audit.Record(ctx, "signup.verified", "", "signup_request", signup.ID, string(meta))
-	return &SignupVerifyResponse{Verified: true, Status: SignupVerifyStatusVerified}, nil
+
+	resp := &SignupVerifyResponse{Verified: true, Status: SignupVerifyStatusVerified}
+	if s.issuer != nil {
+		identity := &repository.ProvisionedIdentity{UserID: "user_gene", AccountID: "acct_default", Role: "owner", DisplayName: "Gene", Email: signup.Email, AccountName: "Gene / default-org"}
+		if s.provisioning != nil {
+			if provisioned, err := s.provisioning.ProvisionSignupIdentity(ctx, signup.Email, now); err == nil && provisioned != nil {
+				identity = provisioned
+			}
+		}
+		sessCtx := session.Context{UserID: identity.UserID, AccountID: identity.AccountID, Role: identity.Role, Prototype: false}
+		token, expiresAt, err := s.issuer.Issue(sessCtx, now)
+		if err == nil {
+			resp.Session = &SessionIssue{
+				Token:      token,
+				CookieName: s.issuer.CookieName(),
+				ExpiresAt:  expiresAt.UTC().Format(time.RFC3339),
+				Context:    &sessCtx,
+			}
+		}
+	}
+	return resp, nil
 }

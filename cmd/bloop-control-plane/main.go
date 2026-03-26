@@ -15,6 +15,7 @@ import (
 	"bloop-control-plane/internal/logging"
 	"bloop-control-plane/internal/repository"
 	"bloop-control-plane/internal/service"
+	"bloop-control-plane/internal/session"
 	"bloop-control-plane/pkg/version"
 )
 
@@ -61,10 +62,17 @@ func main() {
 		onboardingRepo = repository.NewPostgresOnboardingRepository(pool)
 		signupRepo = repository.NewPostgresSignupRepository(pool)
 		sessionRepo = repository.NewPostgresSessionRepository(pool)
+		provisioningRepo := repository.NewPostgresProvisioningRepository(pool)
 		runtimeRepo := repository.NewPostgresRuntimeRepository(pool)
 		auditRecorder := audit.New(pool)
 		emailService := service.NewEmailService(cfg)
-		signupService = service.NewSignupService(signupRepo, emailService, auditRecorder, cfg)
+		var issuer *session.Issuer
+		if cfg.SessionSecret != "" {
+			if tokens, err := session.NewTokenManager(cfg.SessionSecret); err == nil {
+				issuer = session.NewIssuer(tokens, cfg.SessionCookieName, cfg.SessionTTL)
+			}
+		}
+		signupService = service.NewSignupService(signupRepo, emailService, auditRecorder, cfg, issuer, provisioningRepo)
 		ready = true
 
 		router := api.NewRouter(api.RouterDeps{

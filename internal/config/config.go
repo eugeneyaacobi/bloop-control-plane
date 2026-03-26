@@ -24,6 +24,9 @@ type Config struct {
 	AllowDevAuthFallback bool
 	SessionSecret        string
 	SessionCookieName    string
+	SessionTTL           time.Duration
+	SessionCookieSecure  bool
+	SessionCookieDomain  string
 }
 
 func Load() (*Config, error) {
@@ -47,6 +50,16 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid ALLOW_DEV_AUTH_FALLBACK: %w", err)
 	}
+	cookieSecure, err := getenvBool("SESSION_COOKIE_SECURE", !prototypeMode)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SESSION_COOKIE_SECURE: %w", err)
+	}
+
+	sessionTTLRaw := getenv("SESSION_TTL_SECONDS", "604800")
+	sessionTTLSeconds, err := strconv.Atoi(sessionTTLRaw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SESSION_TTL_SECONDS: %w", err)
+	}
 
 	cfg := &Config{
 		ListenAddr:           os.Getenv("LISTEN_ADDR"),
@@ -62,6 +75,9 @@ func Load() (*Config, error) {
 		AllowDevAuthFallback: allowDevAuthFallback,
 		SessionSecret:        os.Getenv("SESSION_SECRET"),
 		SessionCookieName:    getenv("SESSION_COOKIE_NAME", "bloop_session"),
+		SessionTTL:           time.Duration(sessionTTLSeconds) * time.Second,
+		SessionCookieSecure:  cookieSecure,
+		SessionCookieDomain:  os.Getenv("SESSION_COOKIE_DOMAIN"),
 	}
 
 	if cfg.ListenAddr == "" {

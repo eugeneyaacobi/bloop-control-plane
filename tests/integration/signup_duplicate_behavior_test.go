@@ -25,7 +25,7 @@ func TestDuplicateSignupRequestsAreBlandlyAccepted(t *testing.T) {
 	defer pool.Close()
 	repo := repository.NewPostgresSignupRepository(pool)
 	email := &duplicateCaptureEmailSender{}
-	svc := service.NewSignupService(repo, email, audit.New(pool), &config.Config{VerificationTokenTTL: time.Hour})
+	svc := service.NewSignupService(repo, email, audit.New(pool), &config.Config{VerificationTokenTTL: time.Hour}, nil, nil)
 
 	first, err := svc.RequestSignup(context.Background(), "dupe@example.com")
 	if err != nil {

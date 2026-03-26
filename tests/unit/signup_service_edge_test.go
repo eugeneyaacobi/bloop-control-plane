@@ -112,7 +112,7 @@ func TestTokenHashingNeverStoresRawToken(t *testing.T) {
 }
 
 func newTestSignupService(repo *fakeSignupRepo, email *fakeEmailSender, cfg *config.Config) *service.SignupService {
-	return service.NewSignupService(repo, email, audit.New(nil), cfg)
+	return service.NewSignupService(repo, email, audit.New(nil), cfg, nil, nil)
 }
 
 func containsString(haystack, needle string) bool {

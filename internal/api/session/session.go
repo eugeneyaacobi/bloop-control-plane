@@ -8,7 +8,10 @@ import (
 )
 
 type Handler struct {
-	Service *service.SessionService
+	Service       *service.SessionService
+	CookieName    string
+	CookieSecure  bool
+	CookieDomain  string
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {

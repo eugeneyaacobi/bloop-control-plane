@@ -13,6 +13,9 @@ type Handler struct {
 	SignupService        *service.SignupService
 	SignupRequestLimiter *security.RateLimiter
 	SignupVerifyLimiter  *security.RateLimiter
+	SessionCookieName    string
+	SessionCookieSecure  bool
+	SessionCookieDomain  string
 }
 
 func (h *Handler) Steps(w http.ResponseWriter, r *http.Request) {

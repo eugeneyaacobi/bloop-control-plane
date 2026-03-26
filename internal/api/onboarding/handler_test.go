@@ -83,7 +83,7 @@ func (f *fakeEmailSender) SendVerificationEmail(ctx context.Context, toEmail, to
 func TestSignupRequestReturnsAcceptedJSON(t *testing.T) {
 	repo := &fakeHandlerSignupRepo{}
 	h := &Handler{
-		SignupService: service.NewSignupService(repo, &fakeEmailSender{}, nil, &config.Config{VerificationTokenTTL: time.Hour}),
+		SignupService: service.NewSignupService(repo, &fakeEmailSender{}, nil, &config.Config{VerificationTokenTTL: time.Hour}, nil, nil),
 	}
 	body := bytes.NewBufferString(`{"email":"handler@example.com"}`)
 	req := httptest.NewRequest(http.MethodPost, "/signup/request", body)
@@ -121,7 +121,7 @@ func TestSignupRequestRejectsBadJSON(t *testing.T) {
 func TestSignupVerifyReturnsInvalidStatusForUnknownToken(t *testing.T) {
 	repo := &fakeHandlerSignupRepo{}
 	h := &Handler{
-		SignupService: service.NewSignupService(repo, &fakeEmailSender{}, nil, &config.Config{VerificationTokenTTL: time.Hour}),
+		SignupService: service.NewSignupService(repo, &fakeEmailSender{}, nil, &config.Config{VerificationTokenTTL: time.Hour}, nil, nil),
 	}
 	req := httptest.NewRequest(http.MethodPost, "/signup/verify", bytes.NewBufferString(`{"token":"unknown-token"}`))
 	w := httptest.NewRecorder()

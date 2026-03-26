@@ -64,7 +64,10 @@ func setupHTTPTest(t *testing.T) (*pgxpool.Pool, http.Handler, *captureEmailSend
 	runtimeRepo := repository.NewPostgresRuntimeRepository(pool)
 	email := &captureEmailSender{}
 	cfg := &config.Config{VerificationTokenTTL: time.Hour, AllowDevAuthFallback: true, SessionSecret: "integration-test-secret", SessionCookieName: session.DefaultCookieName}
-	signupSvc := service.NewSignupService(signupRepo, email, audit.New(pool), cfg)
+	issuerTokens, _ := session.NewTokenManager(cfg.SessionSecret)
+	issuer := session.NewIssuer(issuerTokens, cfg.SessionCookieName, cfg.SessionTTL)
+	provisioningRepo := repository.NewPostgresProvisioningRepository(pool)
+	signupSvc := service.NewSignupService(signupRepo, email, audit.New(pool), cfg, issuer, provisioningRepo)
 	router := api.NewRouter(api.RouterDeps{
 		CustomerRepo:   customerRepo,
 		AdminRepo:      adminRepo,
@@ -140,12 +143,34 @@ func TestHTTPSignupFlowAndAuditEvents(t *testing.T) {
 	var verifyResp struct {
 		Verified bool   `json:"verified"`
 		Status   string `json:"status"`
+		Session  *struct {
+			Token      string `json:"token"`
+			CookieName string `json:"cookieName"`
+		} `json:"session"`
 	}
 	if err := json.Unmarshal(verifyW.Body.Bytes(), &verifyResp); err != nil {
 		t.Fatalf("decode verify response: %v", err)
 	}
 	if !verifyResp.Verified || verifyResp.Status != string(service.SignupVerifyStatusVerified) {
 		t.Fatalf("expected verified status, got %+v", verifyResp)
+	}
+	if verifyResp.Session == nil || verifyResp.Session.Token == "" || verifyResp.Session.CookieName == "" {
+		t.Fatalf("expected issued session in verify response, got %+v", verifyResp)
+	}
+	mgr, err := session.NewTokenManager("integration-test-secret")
+	if err != nil {
+		t.Fatalf("new token manager: %v", err)
+	}
+	issued, err := mgr.Parse(verifyResp.Session.Token, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("parse issued session token: %v", err)
+	}
+	if issued.AccountID == "acct_default" || issued.UserID == "user_gene" {
+		t.Fatalf("expected provisioned identity instead of seeded fallback, got %+v", issued)
+	}
+	cookies := verifyW.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name == "" || cookies[0].Value == "" {
+		t.Fatalf("expected verify handler to set session cookie")
 	}
 	if bytes.Contains(verifyW.Body.Bytes(), []byte(email.token)) {
 		t.Fatalf("raw token leaked in signup verify response")
@@ -173,6 +198,44 @@ func TestHTTPSignupFlowAndAuditEvents(t *testing.T) {
 	if bytes.Contains(joined, []byte(email.token)) {
 		t.Fatalf("raw token leaked in audit event list")
 	}
+
+	repeatReq := httptest.NewRequest(http.MethodPost, "/api/onboarding/signup/verify", bytes.NewReader(verifyPayload))
+	repeatReq.Header.Set("Content-Type", "application/json")
+	repeatW := httptest.NewRecorder()
+	router.ServeHTTP(repeatW, repeatReq)
+	if repeatW.Code != http.StatusOK {
+		t.Fatalf("expected repeat verify 200 got %d body=%s", repeatW.Code, repeatW.Body.String())
+	}
+	var repeatResp struct {
+		Verified bool   `json:"verified"`
+		Status   string `json:"status"`
+		Session  *struct {
+			Token string `json:"token"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal(repeatW.Body.Bytes(), &repeatResp); err != nil {
+		t.Fatalf("decode repeat verify response: %v", err)
+	}
+	if repeatResp.Verified || repeatResp.Status != string(service.SignupVerifyStatusUsed) {
+		t.Fatalf("expected used status on repeat verify, got %+v", repeatResp)
+	}
+	if repeatResp.Session == nil || repeatResp.Session.Token == "" {
+		t.Fatalf("expected repeat verify to refresh session for existing identity")
+	}
+}
+
+func TestHTTPLogoutClearsCookie(t *testing.T) {
+	_, router, _ := setupHTTPTest(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/logout", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 logout got %d body=%s", w.Code, w.Body.String())
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].MaxAge != -1 {
+		t.Fatalf("expected clearing cookie on logout")
+	}
 }
 
 func TestHTTPSessionMeUsesSignedTokenWhenFallbackDisabled(t *testing.T) {
@@ -192,7 +255,7 @@ func TestHTTPSessionMeUsesSignedTokenWhenFallbackDisabled(t *testing.T) {
 		OnboardingRepo: onboardingRepo,
 		SessionRepo:    sessionRepo,
 		RuntimeRepo:    runtimeRepo,
-		SignupService:  service.NewSignupService(signupRepo, &captureEmailSender{}, audit.New(pool), cfg),
+		SignupService:  service.NewSignupService(signupRepo, &captureEmailSender{}, audit.New(pool), cfg, nil, nil),
 		Config:         cfg,
 		IsReady:        func() bool { return true },
 	})

@@ -68,8 +68,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 		SignupService:        deps.SignupService,
 		SignupRequestLimiter: security.NewRateLimiter(5, time.Minute),
 		SignupVerifyLimiter:  security.NewRateLimiter(10, time.Minute),
+		SessionCookieName:    cfg.SessionCookieName,
+		SessionCookieSecure:  cfg.SessionCookieSecure,
+		SessionCookieDomain:  cfg.SessionCookieDomain,
 	}
-	sessionHandler := &sessionapi.Handler{Service: service.NewSessionService(deps.SessionRepo)}
+	sessionHandler := &sessionapi.Handler{Service: service.NewSessionService(deps.SessionRepo), CookieName: cfg.SessionCookieName, CookieSecure: cfg.SessionCookieSecure, CookieDomain: cfg.SessionCookieDomain}
 
 	prototypeCustomer := session.Resolver{
 		PrototypeAccountID: "acct_default",

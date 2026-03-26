@@ -38,6 +38,9 @@ Prototype fallback is still available, but only when explicitly enabled:
 - `LISTEN_ADDR` — HTTP listen address, default `:8081`
 - `SESSION_SECRET` — required when `ALLOW_DEV_AUTH_FALLBACK=false`; used to verify signed session tokens
 - `SESSION_COOKIE_NAME` — optional cookie name, default `bloop_session`
+- `SESSION_COOKIE_SECURE` — cookie secure flag, defaults to `true` outside prototype mode
+- `SESSION_COOKIE_DOMAIN` — optional cookie domain
+- `SESSION_TTL_SECONDS` — signed session TTL, default 7 days
 - `PROTOTYPE_MODE` — explicit prototype/dev mode switch
 - `ALLOW_DEV_AUTH_FALLBACK` — allows seeded prototype session fallback for local/dev work
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
@@ -65,7 +68,7 @@ Signed bearer token:
 - send `Authorization: Bearer <signed-token>`
 - or set the configured session cookie
 
-The repo does not implement a full login flow yet; token issuance is still expected to happen outside this service or via a future dedicated auth endpoint.
+The repo now issues signed sessions after successful signup verification and exposes `POST /api/session/logout` to clear the session cookie. Full login/re-auth remains a future slice.
 
 ## Docker
 

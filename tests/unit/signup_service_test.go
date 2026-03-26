@@ -63,7 +63,7 @@ func TestSignupRequestPersistsAndSendsEmail(t *testing.T) {
 	repo := &fakeSignupRepo{}
 	email := &fakeEmailSender{}
 	cfg := &config.Config{VerificationTokenTTL: time.Hour}
-	svc := service.NewSignupService(repo, email, nil, cfg)
+	svc := service.NewSignupService(repo, email, nil, cfg, nil, nil)
 
 	resp, err := svc.RequestSignup(context.Background(), "newuser@example.com")
 	if err != nil {
@@ -90,7 +90,7 @@ func TestSignupVerifyMarksCompletedForValidToken(t *testing.T) {
 	repo := &fakeSignupRepo{}
 	email := &fakeEmailSender{}
 	cfg := &config.Config{VerificationTokenTTL: time.Hour}
-	svc := service.NewSignupService(repo, email, nil, cfg)
+	svc := service.NewSignupService(repo, email, nil, cfg, nil, nil)
 
 	requestResp, err := svc.RequestSignup(context.Background(), "verifyme@example.com")
 	if err != nil || !requestResp.Accepted {
@@ -121,7 +121,7 @@ func TestSignupVerifyRejectsExpiredToken(t *testing.T) {
 	repo := &fakeSignupRepo{}
 	email := &fakeEmailSender{}
 	cfg := &config.Config{VerificationTokenTTL: time.Hour}
-	svc := service.NewSignupService(repo, email, nil, cfg)
+	svc := service.NewSignupService(repo, email, nil, cfg, nil, nil)
 
 	requestResp, err := svc.RequestSignup(context.Background(), "expired@example.com")
 	if err != nil || !requestResp.Accepted {

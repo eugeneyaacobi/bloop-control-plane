@@ -25,6 +25,21 @@ func (h *Handler) SignupVerify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
+	if resp != nil && resp.Session != nil && resp.Session.Token != "" {
+		cookieName := h.SessionCookieName
+		if cookieName == "" {
+			cookieName = "bloop_session"
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     cookieName,
+			Value:    resp.Session.Token,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   h.SessionCookieSecure,
+			Domain:   h.SessionCookieDomain,
+		})
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
