@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bloop
+      POSTGRES_PASSWORD: bloop
+      POSTGRES_DB: bloop_control_plane
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "38025:8025"
+
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://bloop:bloop@postgres:5432/bloop_control_plane?sslmode=disable
+      LISTEN_ADDR: :8081
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: noreply@bloop.to
+      VERIFICATION_TOKEN_TTL_SECONDS: 3600
+      SESSION_SECRET: change-me-for-real-deployments
+      SESSION_COOKIE_NAME: bloop_session
+      SESSION_COOKIE_SECURE: "false"
+      SESSION_TTL_SECONDS: 604800
+      PROTOTYPE_MODE: "false"
+      ALLOW_DEV_AUTH_FALLBACK: "false"
+    depends_on:
+      - postgres
+      - mailpit
+    ports:
+      - "38081:8081"
+
+  frontend:
+    build:
+      context: /root/.openclaw/worktree-bloop-frontend-integration
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      CONTROL_PLANE_BASE_URL: http://control-plane:8081
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      - control-plane
+    ports:
+      - "33000:3000"
+
+volumes:
+  pgdata:
