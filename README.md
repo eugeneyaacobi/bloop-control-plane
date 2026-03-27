@@ -82,6 +82,12 @@ This repo now includes:
 - production stack posture in `deploy/compose/v1-stack.yml`
 - release guidance in `/root/.openclaw/workspace/BLOOP_PRODUCTION_RELEASE_RUNBOOK.md`
 - release checklist in `/root/.openclaw/workspace/BLOOP_RELEASE_CHECKLIST.md`
+- automatic patch releases on successful `main` CI via `.github/workflows/auto-release.yml`
+
+Versioning / release policy:
+- tags use semver: `vMAJOR.MINOR.PATCH`
+- automation starts at `v0.1.0`
+- every successful CI run on `main` creates the next patch release
 
 For AI agents / automation:
 - validate with `go test ./...`
