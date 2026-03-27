@@ -10,3 +10,5 @@ coverage.out
 *.log
 .tmp/
 .DS_Store
+.agents/
+.specify/
