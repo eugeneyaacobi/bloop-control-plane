@@ -1,0 +1,51 @@
+name: bloop-control-plane-auto-prerelease
+
+on:
+  workflow_run:
+    workflows: ["control-plane-ci"]
+    types: [completed]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  auto-prerelease:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'develop' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+      - name: Determine next prerelease version
+        id: version
+        shell: bash
+        run: |
+          git fetch --tags --force
+          latest_stable=$(git tag -l 'v*' --sort=-version:refname | grep -Ev -- '-rc\.' | head -n1)
+          if [ -z "$latest_stable" ]; then
+            base="0.1.0"
+          else
+            version="${latest_stable#v}"
+            IFS='.' read -r major minor patch <<< "$version"
+            base="${major}.${minor}.$((patch + 1))"
+          fi
+          count=$(git tag -l "v${base}-rc.*" | sed 's/.*-rc\.//' | sort -n | tail -n1)
+          if [ -z "$count" ]; then count=0; fi
+          next_tag="v${base}-rc.$((count + 1))"
+          echo "tag=$next_tag" >> "$GITHUB_OUTPUT"
+      - name: Create prerelease tag
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+      - name: Create GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          prerelease: true
+          name: bloop-control-plane ${{ steps.version.outputs.tag }}

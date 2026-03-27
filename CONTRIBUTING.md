@@ -2,10 +2,11 @@
 
 ## Branch / release policy
 
-- `main` is release-candidate quality at all times.
-- Every successful CI run on `main` creates the next patch release automatically.
-- Do **not** push directly to `main` unless the change is intended to ship.
-- Use pull requests for normal work, including docs and refactors.
+- `develop` is the integration branch for ongoing work.
+- Successful CI on `develop` creates an automatic prerelease (`-rc.N`).
+- `main` is promotion-only and should represent stable release candidates.
+- Successful CI on `main` creates the next stable patch release automatically.
+- Normal work should land on feature branches and merge into `develop` via pull request.
 
 ## When to use PRs
 
@@ -16,21 +17,21 @@ Use a PR for:
 - workflow/config changes
 - dependency changes
 
-Direct pushes to `main` should be reserved for:
-- urgent release fixes
-- operator-approved hotfixes
+Direct pushes to protected branches should be avoided. Use PRs into `develop`, then promote `develop` -> `main` intentionally.
 
 ## Release semantics
 
-- Current automation bumps patch only: `v0.1.0` -> `v0.1.1` -> `v0.1.2`
+- Stable tags use semver: `vMAJOR.MINOR.PATCH`
+- Develop prereleases use semver prerelease tags: `vMAJOR.MINOR.PATCH-rc.N`
 - Minor/major releases should be cut intentionally by maintainers.
 - `v1.0.0` should be cut only after an explicit readiness review.
 
 ## Required protections
 
-Configure GitHub branch protection on `main`:
+Configure GitHub branch protection on `develop` and `main`:
 - require pull requests before merging
 - require CI status checks to pass
+- require review from code owners
 - block force pushes
 - block deletions
 

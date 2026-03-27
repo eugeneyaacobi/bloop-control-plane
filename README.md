@@ -87,7 +87,9 @@ This repo now includes:
 Versioning / release policy:
 - tags use semver: `vMAJOR.MINOR.PATCH`
 - automation starts at `v0.1.0`
-- every successful CI run on `main` creates the next patch release
+- every successful CI run on `develop` creates the next prerelease tag (`-rc.N`)
+- every successful CI run on `main` creates the next stable patch release
+- recommended flow: feature branch -> PR to `develop` -> validate prerelease -> promote to `main`
 
 For AI agents / automation:
 - validate with `go test ./...`
