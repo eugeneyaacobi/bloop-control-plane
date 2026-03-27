@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"bloop-control-plane/internal/models"
+	"bloop-control-plane/internal/repository"
 	"bloop-control-plane/internal/service"
 	"bloop-control-plane/internal/session"
 	"github.com/go-chi/chi/v5"
@@ -19,6 +20,8 @@ type fakeCustomerRepo struct {
 	workspaceTunnels []models.Tunnel
 	listTunnels      []models.Tunnel
 	tunnel           *models.Tunnel
+	installations    []models.RuntimeInstallation
+	overlay          *repository.RuntimeOverlay
 	lastAccountID    string
 	err              error
 }
@@ -45,6 +48,22 @@ func (f *fakeCustomerRepo) GetTunnelByID(ctx context.Context, accountID, tunnelI
 		return nil, f.err
 	}
 	return f.tunnel, nil
+}
+
+func (f *fakeCustomerRepo) ListInstallations(ctx context.Context, accountID string) ([]models.RuntimeInstallation, error) {
+	f.lastAccountID = accountID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.installations, nil
+}
+
+func (f *fakeCustomerRepo) GetRuntimeOverlayByTunnel(ctx context.Context, accountID, tunnelID string) (*repository.RuntimeOverlay, error) {
+	f.lastAccountID = accountID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.overlay, nil
 }
 
 func withCustomerSession(req *http.Request, accountID string) *http.Request {

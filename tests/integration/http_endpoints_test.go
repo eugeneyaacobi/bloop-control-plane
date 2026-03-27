@@ -48,7 +48,7 @@ func setupHTTPTest(t *testing.T) (*pgxpool.Pool, http.Handler, *captureEmailSend
 	if err := migrations.Apply(context.Background(), pool, migrationsDir); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
-	for _, table := range []string{"audit_events", "email_verifications", "signup_requests", "onboarding_steps", "review_flags", "tunnels", "memberships", "users", "accounts"} {
+	for _, table := range []string{"runtime_tunnel_snapshots", "runtime_events", "runtime_tunnel_bindings", "runtime_installation_tokens", "runtime_installations", "audit_events", "email_verifications", "signup_requests", "onboarding_steps", "review_flags", "tunnels", "memberships", "users", "accounts"} {
 		if _, err := pool.Exec(context.Background(), "TRUNCATE TABLE "+table+" RESTART IDENTITY CASCADE"); err != nil {
 			t.Fatalf("truncate %s: %v", table, err)
 		}
@@ -62,21 +62,25 @@ func setupHTTPTest(t *testing.T) (*pgxpool.Pool, http.Handler, *captureEmailSend
 	signupRepo := repository.NewPostgresSignupRepository(pool)
 	sessionRepo := repository.NewPostgresSessionRepository(pool)
 	runtimeRepo := repository.NewPostgresRuntimeRepository(pool)
+	runtimeInstallationRepo := repository.NewPostgresRuntimeInstallationRepository(pool)
+	runtimeInstallationService := service.NewRuntimeInstallationService(runtimeInstallationRepo)
 	email := &captureEmailSender{}
-	cfg := &config.Config{VerificationTokenTTL: time.Hour, AllowDevAuthFallback: true, SessionSecret: "integration-test-secret", SessionCookieName: session.DefaultCookieName}
+	cfg := &config.Config{VerificationTokenTTL: time.Hour, AllowDevAuthFallback: true, SessionSecret: "integration-test-secret", SessionCookieName: session.DefaultCookieName, SessionTTL: 24 * time.Hour, RuntimeIngestSecret: "integration-runtime-secret"}
 	issuerTokens, _ := session.NewTokenManager(cfg.SessionSecret)
-	issuer := session.NewIssuer(issuerTokens, cfg.SessionCookieName, cfg.SessionTTL)
+	issuer := session.NewIssuer(issuerTokens, cfg.SessionCookieName, cfg.SessionTTL, repository.NewPostgresSessionVersionRepository(pool))
 	provisioningRepo := repository.NewPostgresProvisioningRepository(pool)
 	signupSvc := service.NewSignupService(signupRepo, email, audit.New(pool), cfg, issuer, provisioningRepo)
 	router := api.NewRouter(api.RouterDeps{
-		CustomerRepo:   customerRepo,
-		AdminRepo:      adminRepo,
-		OnboardingRepo: onboardingRepo,
-		SessionRepo:    sessionRepo,
-		RuntimeRepo:    runtimeRepo,
-		SignupService:  signupSvc,
-		Config:         cfg,
-		IsReady:        func() bool { return true },
+		CustomerRepo:               customerRepo,
+		AdminRepo:                  adminRepo,
+		OnboardingRepo:             onboardingRepo,
+		SessionRepo:                sessionRepo,
+		RuntimeRepo:                runtimeRepo,
+		SignupService:              signupSvc,
+		RuntimeInstallationService: runtimeInstallationService,
+		Config:                     cfg,
+		IsReady:                    func() bool { return true },
+		DBPool:                     pool,
 	})
 	return pool, router, email
 }
@@ -238,6 +242,99 @@ func TestHTTPLogoutClearsCookie(t *testing.T) {
 	}
 }
 
+func TestHTTPRuntimeIngestSnapshotInfluencesProjection(t *testing.T) {
+	pool, router, _ := setupHTTPTest(t)
+	defer pool.Close()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/runtime/installations", bytes.NewBufferString(`{"name":"Integration Node","environment":"test"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	router.ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("expected 201 installation create got %d body=%s", createW.Code, createW.Body.String())
+	}
+	var createResp struct {
+		Installation struct { ID string `json:"id"` } `json:"installation"`
+		Enrollment   struct { Token string `json:"token"` } `json:"enrollment"`
+	}
+	if err := json.Unmarshal(createW.Body.Bytes(), &createResp); err != nil {
+		t.Fatalf("decode installation create response: %v", err)
+	}
+	if createResp.Installation.ID == "" || createResp.Enrollment.Token == "" {
+		t.Fatalf("expected installation id and enrollment token, got %s", createW.Body.String())
+	}
+
+	enrollPayload, _ := json.Marshal(map[string]string{"token": createResp.Enrollment.Token, "clientName": "integration-client", "clientVersion": "0.1.0"})
+	enrollReq := httptest.NewRequest(http.MethodPost, "/api/runtime/enroll", bytes.NewReader(enrollPayload))
+	enrollReq.Header.Set("Content-Type", "application/json")
+	enrollW := httptest.NewRecorder()
+	router.ServeHTTP(enrollW, enrollReq)
+	if enrollW.Code != http.StatusOK {
+		t.Fatalf("expected 200 enroll got %d body=%s", enrollW.Code, enrollW.Body.String())
+	}
+	var enrollResp struct {
+		Installation struct { ID string `json:"id"` } `json:"installation"`
+		Ingest       struct { Token string `json:"token"` } `json:"ingest"`
+	}
+	if err := json.Unmarshal(enrollW.Body.Bytes(), &enrollResp); err != nil {
+		t.Fatalf("decode enroll response: %v", err)
+	}
+	if enrollResp.Ingest.Token == "" {
+		t.Fatalf("expected ingest token after enroll, got %s", enrollW.Body.String())
+	}
+
+	ingestPayload := bytes.NewBufferString(`{
+		"capturedAt":"2026-03-26T22:00:00Z",
+		"tunnels":[{"tunnelId":"api","accountId":"ignored-by-bearer-auth","hostname":"api.bloop.to","accessMode":"token_protected","status":"degraded","degraded":true,"observedAt":"2026-03-26T22:00:00Z"}],
+		"events":[{"id":"evt_runtime_1","accountId":"ignored-by-bearer-auth","tunnelId":"api","hostname":"api.bloop.to","kind":"tunnel.degraded","level":"warn","message":"Runtime reported degraded health","occurredAt":"2026-03-26T22:00:00Z"}]
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/runtime/ingest/snapshot", ingestPayload)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+enrollResp.Ingest.Token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 runtime ingest got %d body=%s", w.Code, w.Body.String())
+	}
+
+	workspaceReq := httptest.NewRequest(http.MethodGet, "/api/customer/workspace", nil)
+	workspaceW := httptest.NewRecorder()
+	router.ServeHTTP(workspaceW, workspaceReq)
+	if workspaceW.Code != http.StatusOK {
+		t.Fatalf("expected 200 workspace got %d body=%s", workspaceW.Code, workspaceW.Body.String())
+	}
+	var workspaceResp struct {
+		RuntimeSnapshot struct {
+			ActiveRoutes    int `json:"activeRoutes"`
+			ProtectedRoutes int `json:"protectedRoutes"`
+			DegradedRoutes  int `json:"degradedRoutes"`
+		} `json:"runtimeSnapshot"`
+		RecentActivity []struct {
+			Message string `json:"message"`
+		} `json:"recentActivity"`
+	}
+	if err := json.Unmarshal(workspaceW.Body.Bytes(), &workspaceResp); err != nil {
+		t.Fatalf("decode workspace response: %v", err)
+	}
+	if workspaceResp.RuntimeSnapshot.DegradedRoutes < 1 {
+		t.Fatalf("expected ingested runtime projection to report degraded route, got %+v", workspaceResp.RuntimeSnapshot)
+	}
+	if len(workspaceResp.RecentActivity) == 0 {
+		t.Fatalf("expected runtime recent activity after ingest")
+	}
+
+	var storedAccountID, storedInstallationID string
+	if err := pool.QueryRow(context.Background(), `SELECT account_id, installation_id FROM runtime_tunnel_snapshots WHERE tunnel_id = $1`, "api").Scan(&storedAccountID, &storedInstallationID); err != nil {
+		t.Fatalf("query runtime snapshot identity: %v", err)
+	}
+	if storedAccountID != "acct_default" {
+		t.Fatalf("expected bearer ingest to resolve account_id acct_default, got %q", storedAccountID)
+	}
+	if storedInstallationID != createResp.Installation.ID {
+		t.Fatalf("expected installation_id %q, got %q", createResp.Installation.ID, storedInstallationID)
+	}
+}
+
 func TestHTTPSessionMeUsesSignedTokenWhenFallbackDisabled(t *testing.T) {
 	pool, _, _ := setupHTTPTest(t)
 	defer pool.Close()
@@ -258,6 +355,7 @@ func TestHTTPSessionMeUsesSignedTokenWhenFallbackDisabled(t *testing.T) {
 		SignupService:  service.NewSignupService(signupRepo, &captureEmailSender{}, audit.New(pool), cfg, nil, nil),
 		Config:         cfg,
 		IsReady:        func() bool { return true },
+		DBPool:         pool,
 	})
 
 	unauthReq := httptest.NewRequest(http.MethodGet, "/api/session/me", nil)

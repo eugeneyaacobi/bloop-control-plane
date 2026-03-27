@@ -9,6 +9,7 @@ import (
 
 type AdminRepository interface {
 	OverviewStats(ctx context.Context) (accountCount, publicRoutes, flaggedExposures int, err error)
+	RuntimeInstallationStats(ctx context.Context) (total, active, revoked, stale int, err error)
 	ListUsers(ctx context.Context) ([]models.User, error)
 	ListTunnels(ctx context.Context) ([]models.Tunnel, error)
 	ListReviewFlags(ctx context.Context) ([]models.ReviewFlag, error)
@@ -34,6 +35,23 @@ func (r *PostgresAdminRepository) OverviewStats(ctx context.Context) (int, int, 
 		return 0, 0, 0, err
 	}
 	return accountCount, publicRoutes, flagged, nil
+}
+
+func (r *PostgresAdminRepository) RuntimeInstallationStats(ctx context.Context) (int, int, int, int, error) {
+	var total, active, revoked, stale int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_installations`).Scan(&total); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_installations WHERE status = 'active'`).Scan(&active); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_installations WHERE status = 'revoked'`).Scan(&revoked); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_installations WHERE last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '15 minutes'`).Scan(&stale); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return total, active, revoked, stale, nil
 }
 
 func (r *PostgresAdminRepository) ListUsers(ctx context.Context) ([]models.User, error) {

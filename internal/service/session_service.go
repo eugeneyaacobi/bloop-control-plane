@@ -2,17 +2,19 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"bloop-control-plane/internal/repository"
 	"bloop-control-plane/internal/session"
 )
 
 type SessionService struct {
-	repo repository.SessionRepository
+	repo  repository.SessionRepository
+	nowFn func() time.Time
 }
 
 func NewSessionService(repo repository.SessionRepository) *SessionService {
-	return &SessionService{repo: repo}
+	return &SessionService{repo: repo, nowFn: func() time.Time { return time.Now().UTC() }}
 }
 
 type SessionMeResponse struct {
@@ -24,6 +26,15 @@ type SessionMeResponse struct {
 	User          any    `json:"user,omitempty"`
 	Account       any    `json:"account,omitempty"`
 	Membership    any    `json:"membership,omitempty"`
+}
+
+func (s *SessionService) Logout(ctx context.Context) error {
+	sess, _ := session.FromContext(ctx)
+	if s.repo == nil || !sess.IsAuthenticated() {
+		return nil
+	}
+	_, err := s.repo.BumpSessionVersion(ctx, sess, s.nowFn())
+	return err
 }
 
 func (s *SessionService) GetMe(ctx context.Context) (*SessionMeResponse, error) {

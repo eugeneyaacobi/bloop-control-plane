@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"bloop-control-plane/internal/api/authz"
-	"bloop-control-plane/internal/models"
 	"bloop-control-plane/internal/service"
 )
 
@@ -15,8 +14,8 @@ type Handler struct {
 
 type CustomerWorkspaceService interface {
 	GetWorkspace(ctx context.Context, accountID string) (*service.CustomerWorkspaceResponse, error)
-	ListTunnels(ctx context.Context, accountID string) ([]models.Tunnel, error)
-	GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error)
+	ListTunnels(ctx context.Context, accountID string) ([]service.CustomerTunnelResponse, error)
+	GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*service.CustomerTunnelResponse, error)
 }
 
 func (h *Handler) Workspace(w http.ResponseWriter, r *http.Request) {

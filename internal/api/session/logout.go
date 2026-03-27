@@ -7,6 +7,9 @@ import (
 )
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	if h.Service != nil {
+		_ = h.Service.Logout(r.Context())
+	}
 	cookieName := h.CookieName
 	if cookieName == "" {
 		cookieName = "bloop_session"

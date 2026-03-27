@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"bloop-control-plane/internal/models"
 	"bloop-control-plane/internal/session"
@@ -16,6 +17,8 @@ type SessionIdentity struct {
 
 type SessionRepository interface {
 	ResolveIdentity(ctx context.Context, sess session.Context) (*SessionIdentity, error)
+	GetSessionVersion(ctx context.Context, scopeKey string) (int64, error)
+	BumpSessionVersion(ctx context.Context, sess session.Context, now time.Time) (int64, error)
 }
 
 type PostgresSessionRepository struct {
@@ -24,6 +27,14 @@ type PostgresSessionRepository struct {
 
 func NewPostgresSessionRepository(pool *pgxpool.Pool) *PostgresSessionRepository {
 	return &PostgresSessionRepository{pool: pool}
+}
+
+func (r *PostgresSessionRepository) GetSessionVersion(ctx context.Context, scopeKey string) (int64, error) {
+	return NewPostgresSessionVersionRepository(r.pool).GetSessionVersion(ctx, scopeKey)
+}
+
+func (r *PostgresSessionRepository) BumpSessionVersion(ctx context.Context, sess session.Context, now time.Time) (int64, error) {
+	return NewPostgresSessionVersionRepository(r.pool).BumpSessionVersion(ctx, SessionScopeKey(sess.UserID, sess.AccountID, sess.Role), now)
 }
 
 func (r *PostgresSessionRepository) ResolveIdentity(ctx context.Context, sess session.Context) (*SessionIdentity, error) {

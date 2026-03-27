@@ -19,17 +19,73 @@ func NewPostgresRuntimeRepository(pool *pgxpool.Pool) *PostgresRuntimeRepository
 
 func (r *PostgresRuntimeRepository) ProjectAccount(ctx context.Context, account models.Account, tunnels []models.Tunnel) (runtime.AccountProjection, error) {
 	projection := runtime.AccountProjection{}
-	for _, tunnel := range tunnels {
-		projection.ActiveRoutes++
-		if tunnel.Access != "public" {
-			projection.ProtectedRoutes++
+	rows, err := r.pool.Query(ctx, `
+		SELECT tunnel_id, access_mode, status, degraded
+		FROM runtime_tunnel_snapshots
+		WHERE account_id = $1
+		ORDER BY observed_at DESC`, account.ID)
+	if err == nil {
+		count := 0
+		for rows.Next() {
+			var tunnelID, accessMode, status string
+			var degraded bool
+			if err := rows.Scan(&tunnelID, &accessMode, &status, &degraded); err != nil {
+				return runtime.AccountProjection{}, err
+			}
+			count++
+			projection.ActiveRoutes++
+			if accessMode != "public" {
+				projection.ProtectedRoutes++
+			}
+			if degraded || status != "healthy" {
+				projection.DegradedRoutes++
+			}
 		}
-		if tunnel.Status != "healthy" {
-			projection.DegradedRoutes++
+		rows.Close()
+		if count == 0 {
+			for _, tunnel := range tunnels {
+				projection.ActiveRoutes++
+				if tunnel.Access != "public" {
+					projection.ProtectedRoutes++
+				}
+				if tunnel.Status != "healthy" {
+					projection.DegradedRoutes++
+				}
+			}
+		}
+	} else {
+		for _, tunnel := range tunnels {
+			projection.ActiveRoutes++
+			if tunnel.Access != "public" {
+				projection.ProtectedRoutes++
+			}
+			if tunnel.Status != "healthy" {
+				projection.DegradedRoutes++
+			}
 		}
 	}
 
-	rows, err := r.pool.Query(ctx, `
+	rows, err = r.pool.Query(ctx, `
+		SELECT id, kind, message, level
+		FROM runtime_events
+		WHERE account_id = $1
+		ORDER BY occurred_at DESC
+		LIMIT 5`, account.ID)
+	if err == nil {
+		for rows.Next() {
+			var id, kind, message, level string
+			if err := rows.Scan(&id, &kind, &message, &level); err != nil {
+				return runtime.AccountProjection{}, err
+			}
+			projection.RecentActivity = append(projection.RecentActivity, runtime.Activity{ID: id, Level: level, Message: fmt.Sprintf("%s: %s", kind, message)})
+		}
+		rows.Close()
+	}
+	if len(projection.RecentActivity) > 0 {
+		return projection, nil
+	}
+
+	rows, err = r.pool.Query(ctx, `
 		SELECT id, step_key, title, state
 		FROM onboarding_steps
 		WHERE account_id = $1
@@ -68,6 +124,29 @@ func (r *PostgresRuntimeRepository) ProjectGlobal(ctx context.Context, tunnels [
 	projection := runtime.GlobalProjection{FlaggedExposures: len(flags)}
 
 	rows, err := r.pool.Query(ctx, `
+		SELECT id, kind, message, level
+		FROM runtime_events
+		ORDER BY occurred_at DESC
+		LIMIT 5`)
+	if err == nil {
+		for rows.Next() {
+			var id, kind, message, level string
+			if err := rows.Scan(&id, &kind, &message, &level); err != nil {
+				return runtime.GlobalProjection{}, err
+			}
+			projection.RecentActivity = append(projection.RecentActivity, runtime.Activity{ID: id, Level: level, Message: fmt.Sprintf("%s: %s", kind, message)})
+		}
+		rows.Close()
+	}
+	var runtimeFlagged int
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM runtime_tunnel_snapshots WHERE access_mode = 'public' OR degraded = true OR status <> 'healthy'`).Scan(&runtimeFlagged); err == nil && runtimeFlagged > projection.FlaggedExposures {
+		projection.FlaggedExposures = runtimeFlagged
+	}
+	if len(projection.RecentActivity) > 0 {
+		return projection, nil
+	}
+
+	rows, err = r.pool.Query(ctx, `
 		SELECT id, item, reason, severity
 		FROM review_flags
 		ORDER BY created_at DESC

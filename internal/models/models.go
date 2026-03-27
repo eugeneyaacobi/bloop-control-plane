@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type User struct {
 	ID          string `json:"id"`
 	Email       string `json:"email"`
@@ -40,4 +42,37 @@ type SignupRequest struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	State string `json:"state"`
+}
+
+type RuntimeInstallation struct {
+	ID          string     `json:"id"`
+	AccountID   string     `json:"accountId"`
+	Name        string     `json:"name"`
+	Environment string     `json:"environment,omitempty"`
+	Status      string     `json:"status"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+	LastSeenAt  *time.Time `json:"lastSeenAt,omitempty"`
+}
+
+type RuntimeInstallationToken struct {
+	ID             string     `json:"id"`
+	InstallationID string     `json:"installationId"`
+	Kind           string     `json:"kind"`
+	TokenHash      string     `json:"-"`
+	ExpiresAt      *time.Time `json:"expiresAt,omitempty"`
+	RevokedAt      *time.Time `json:"revokedAt,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	LastUsedAt     *time.Time `json:"lastUsedAt,omitempty"`
+}
+
+type RuntimeTunnelBinding struct {
+	ID                string    `json:"id"`
+	AccountID         string    `json:"accountId"`
+	InstallationID    string    `json:"installationId"`
+	TunnelID          string    `json:"tunnelId"`
+	RuntimeTunnelName string    `json:"runtimeTunnelName"`
+	Hostname          string    `json:"hostname"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }

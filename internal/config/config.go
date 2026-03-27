@@ -27,6 +27,7 @@ type Config struct {
 	SessionTTL           time.Duration
 	SessionCookieSecure  bool
 	SessionCookieDomain  string
+	RuntimeIngestSecret  string
 }
 
 func Load() (*Config, error) {
@@ -78,6 +79,7 @@ func Load() (*Config, error) {
 		SessionTTL:           time.Duration(sessionTTLSeconds) * time.Second,
 		SessionCookieSecure:  cookieSecure,
 		SessionCookieDomain:  os.Getenv("SESSION_COOKIE_DOMAIN"),
+		RuntimeIngestSecret:  os.Getenv("RUNTIME_INGEST_SECRET"),
 	}
 
 	if cfg.ListenAddr == "" {

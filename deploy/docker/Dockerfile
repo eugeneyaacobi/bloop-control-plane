@@ -6,5 +6,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/bloop-control-plane ./cmd/bloop-control-plane
 
 FROM gcr.io/distroless/base-debian12
-COPY --from=builder /out/bloop-control-plane /bloop-control-plane
-ENTRYPOINT ["/bloop-control-plane"]
+WORKDIR /app
+COPY --from=builder /out/bloop-control-plane /app/bloop-control-plane
+COPY internal/db/migrations /app/internal/db/migrations
+ENTRYPOINT ["/app/bloop-control-plane"]

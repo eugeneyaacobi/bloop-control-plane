@@ -75,6 +75,40 @@ The repo now issues signed sessions after successful signup verification and exp
 A fuller local stack is available via:
 - `docker compose -f deploy/compose/dev-full.yml up --build`
 
+## Open-source / public release notes
+
+This repo now includes:
+- GitHub Actions CI at `.github/workflows/ci.yml`
+- production stack posture in `deploy/compose/v1-stack.yml`
+- release guidance in `/root/.openclaw/workspace/BLOOP_PRODUCTION_RELEASE_RUNBOOK.md`
+- release checklist in `/root/.openclaw/workspace/BLOOP_RELEASE_CHECKLIST.md`
+
+For AI agents / automation:
+- validate with `go test ./...`
+- deploy with `docker compose -f deploy/compose/v1-stack.yml up -d --build`
+- verify `/healthz` and `/readyz`
+- ensure `PROTOTYPE_MODE=false` and `ALLOW_DEV_AUTH_FALLBACK=false`
+
+## Runtime ingest dev integration
+
+A reproducible local end-to-end proof now exists for:
+- control-plane + postgres + mailpit
+- relay + client + local echo target
+- runtime ingest into control-plane
+- customer workspace runtime summary reflecting ingested truth in prototype/dev mode
+
+Run from this repo:
+- `make dev-runtime-e2e`
+
+Tear down:
+- `make dev-runtime-e2e-down`
+
+Notes:
+- control-plane listens on host `localhost:38081`
+- Postgres is exposed on host `localhost:35432`
+- the relay/client stack is started from the bloop-tunnel repo via `deploy/compose/dev-relay-ingest.yml`
+- in prototype/dev mode, runtime ingest normalizes unknown relay session account ids onto `acct_default` so the local customer workspace can reflect live ingested data
+
 ## Status
 
 Early implementation in progress. See `specs/001-read-api-control-plane/` for spec, plan, and tasks.

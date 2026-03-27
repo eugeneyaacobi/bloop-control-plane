@@ -22,16 +22,22 @@ var (
 )
 
 type TokenClaims struct {
-	Version   int    `json:"v"`
-	Kind      string `json:"kind"`
-	UserID    string `json:"uid,omitempty"`
-	AccountID string `json:"aid,omitempty"`
-	Role      string `json:"role,omitempty"`
-	ExpiresAt int64  `json:"exp"`
+	Version        int    `json:"v"`
+	Kind           string `json:"kind"`
+	UserID         string `json:"uid,omitempty"`
+	AccountID      string `json:"aid,omitempty"`
+	Role           string `json:"role,omitempty"`
+	SessionVersion int64  `json:"sv,omitempty"`
+	ExpiresAt      int64  `json:"exp"`
 }
 
 type TokenManager struct {
 	secret []byte
+}
+
+type ParsedToken struct {
+	Context Context
+	Claims  TokenClaims
 }
 
 func NewTokenManager(secret string) (*TokenManager, error) {
@@ -68,33 +74,33 @@ func (m *TokenManager) Sign(claims TokenClaims) (string, error) {
 	return encodedPayload + "." + sig, nil
 }
 
-func (m *TokenManager) Parse(token string, now time.Time) (Context, error) {
+func (m *TokenManager) ParseDetailed(token string, now time.Time) (*ParsedToken, error) {
 	if m == nil || len(m.secret) == 0 {
-		return Context{}, ErrMissingSecret
+		return nil, ErrMissingSecret
 	}
 	parts := strings.Split(strings.TrimSpace(token), ".")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return Context{}, ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 	if !hmac.Equal([]byte(m.sign(parts[0])), []byte(parts[1])) {
-		return Context{}, ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return Context{}, ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 	var claims TokenClaims
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return Context{}, ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 	if claims.Version != 1 || claims.Kind != "session" {
-		return Context{}, ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
 	if now.Unix() >= claims.ExpiresAt {
-		return Context{}, ErrExpiredToken
+		return nil, ErrExpiredToken
 	}
 	ctx := Context{
 		UserID:    claims.UserID,
@@ -103,9 +109,17 @@ func (m *TokenManager) Parse(token string, now time.Time) (Context, error) {
 		Prototype: false,
 	}
 	if !ctx.IsAuthenticated() || (ctx.AccountID == "" && !ctx.IsAdmin()) {
-		return Context{}, ErrMissingClaims
+		return nil, ErrMissingClaims
 	}
-	return ctx, nil
+	return &ParsedToken{Context: ctx, Claims: claims}, nil
+}
+
+func (m *TokenManager) Parse(token string, now time.Time) (Context, error) {
+	parsed, err := m.ParseDetailed(token, now)
+	if err != nil {
+		return Context{}, err
+	}
+	return parsed.Context, nil
 }
 
 func (m *TokenManager) sign(encodedPayload string) string {

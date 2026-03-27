@@ -38,6 +38,10 @@ func (s *AdminService) GetOverview(ctx context.Context) (*AdminOverviewResponse,
 	if err != nil {
 		return nil, err
 	}
+	runtimeInstallations, runtimeActive, runtimeRevoked, runtimeStale, err := s.repo.RuntimeInstallationStats(ctx)
+	if err != nil {
+		return nil, err
+	}
 	exposures, err := s.repo.ListTunnels(ctx)
 	if err != nil {
 		return nil, err
@@ -58,6 +62,10 @@ func (s *AdminService) GetOverview(ctx context.Context) (*AdminOverviewResponse,
 			{Label: "Accounts", Value: strconv.Itoa(accounts)},
 			{Label: "Open public routes", Value: strconv.Itoa(publicRoutes)},
 			{Label: "Flagged exposures", Value: strconv.Itoa(flagged)},
+			{Label: "Installations", Value: strconv.Itoa(runtimeInstallations)},
+			{Label: "Active installs", Value: strconv.Itoa(runtimeActive)},
+			{Label: "Revoked installs", Value: strconv.Itoa(runtimeRevoked)},
+			{Label: "Stale heartbeats", Value: strconv.Itoa(runtimeStale)},
 		},
 		Exposures:       exposures,
 		RecentActivity:  projection.RecentActivity,

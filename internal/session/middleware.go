@@ -14,6 +14,7 @@ type Resolver struct {
 	AllowPrototype     bool
 	CookieName         string
 	Tokens             *TokenManager
+	SessionVersions    SessionVersionLookup
 	Now                func() time.Time
 }
 
@@ -21,9 +22,9 @@ func (r Resolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		resolved := Context{}
 		if token := r.sessionTokenFromRequest(req); token != "" && r.Tokens != nil {
-			parsed, err := r.Tokens.Parse(token, r.now())
-			if err == nil {
-				resolved = parsed
+			parsed, err := r.Tokens.ParseDetailed(token, r.now())
+			if err == nil && ValidateSessionVersion(req.Context(), r.SessionVersions, parsed) {
+				resolved = parsed.Context
 			}
 		}
 		if !resolved.IsAuthenticated() && r.AllowPrototype {

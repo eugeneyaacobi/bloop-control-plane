@@ -9,6 +9,39 @@ services:
       - "35432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+  
+  bloop-control-plane:
+    image: ghcr.io/openclaw/bloop-control-plane:latest # Using pre-built image for now assume it's on GHCR
+    ports:
+      - "8080:8080" # API
+      - "8081:8081" # ingest API
+    environment:
+      DATABASE_URL: postgres://bloop:bloop@postgres:5432/bloop_control_plane
+      SESSION_SECRET: change-me
+      RUNTIME_INGEST_SECRET: change-me
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $$POSTGRES_DB -U $$POSTGRES_USER"]
+
+  bloop-relay:
+    build:
+      context: ../../bloop-tunnel # Corrected context path
+      dockerfile: ./deploy/docker/relay.Dockerfile # Corrected dockerfile path
+    environment:
+      BLOOP_RUNTIME_INGEST_ENDPOINT: http://bloop-control-plane:8081/api/runtime/ingest/snapshot
+      BLOOP_RUNTIME_INGEST_SECRET: change-me
+      BLOOP_RELAY_RUNTIME_INGEST_ENABLED: "true"
+      BLOOP_DOMAIN: localhost
+    depends_on:
+      bloop-control-plane:
+        condition: service_started
+    networks:
+      - default
 
 volumes:
   pgdata:
+networks:
+  default:
+    name: bloop_network

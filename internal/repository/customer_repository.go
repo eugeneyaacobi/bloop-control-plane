@@ -6,10 +6,22 @@ import (
 	"bloop-control-plane/internal/models"
 )
 
+type RuntimeOverlay struct {
+	InstallationID   string
+	InstallationName string
+	Status           string
+	Degraded         bool
+	LastSeenAt       *string
+	ObservedHostname string
+	Drift            string
+}
+
 type CustomerRepository interface {
 	GetWorkspace(ctx context.Context, accountID string) (models.Account, []models.Tunnel, error)
 	ListTunnels(ctx context.Context, accountID string) ([]models.Tunnel, error)
 	GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error)
+	ListInstallations(ctx context.Context, accountID string) ([]models.RuntimeInstallation, error)
+	GetRuntimeOverlayByTunnel(ctx context.Context, accountID, tunnelID string) (*RuntimeOverlay, error)
 }
 
 type InMemoryCustomerRepository struct {

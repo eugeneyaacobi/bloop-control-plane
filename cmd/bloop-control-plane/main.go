@@ -64,26 +64,31 @@ func main() {
 		sessionRepo = repository.NewPostgresSessionRepository(pool)
 		provisioningRepo := repository.NewPostgresProvisioningRepository(pool)
 		runtimeRepo := repository.NewPostgresRuntimeRepository(pool)
+		runtimeInstallationRepo := repository.NewPostgresRuntimeInstallationRepository(pool)
+		runtimeInstallationService := service.NewRuntimeInstallationService(runtimeInstallationRepo)
+		sessionVersionRepo := repository.NewPostgresSessionVersionRepository(pool)
 		auditRecorder := audit.New(pool)
 		emailService := service.NewEmailService(cfg)
 		var issuer *session.Issuer
 		if cfg.SessionSecret != "" {
 			if tokens, err := session.NewTokenManager(cfg.SessionSecret); err == nil {
-				issuer = session.NewIssuer(tokens, cfg.SessionCookieName, cfg.SessionTTL)
+				issuer = session.NewIssuer(tokens, cfg.SessionCookieName, cfg.SessionTTL, sessionVersionRepo)
 			}
 		}
 		signupService = service.NewSignupService(signupRepo, emailService, auditRecorder, cfg, issuer, provisioningRepo)
 		ready = true
 
 		router := api.NewRouter(api.RouterDeps{
-			CustomerRepo:   customerRepo,
-			AdminRepo:      adminRepo,
-			OnboardingRepo: onboardingRepo,
-			SessionRepo:    sessionRepo,
-			RuntimeRepo:    runtimeRepo,
-			SignupService:  signupService,
-			Config:         cfg,
-			IsReady:        func() bool { return ready },
+			CustomerRepo:               customerRepo,
+			AdminRepo:                  adminRepo,
+			OnboardingRepo:             onboardingRepo,
+			SessionRepo:                sessionRepo,
+			RuntimeRepo:                runtimeRepo,
+			SignupService:              signupService,
+			RuntimeInstallationService: runtimeInstallationService,
+			Config:                     cfg,
+			IsReady:                    func() bool { return ready },
+			DBPool:                     pool,
 		})
 		logger.Info("control plane starting", "listen_addr", cfg.ListenAddr, "smtp_host", logging.Redact(cfg.SMTPHost), "prototype_mode", cfg.PrototypeMode, "dev_auth_fallback", cfg.AllowDevAuthFallback)
 		if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	adminapi "bloop-control-plane/internal/api/admin"
+	runtimeapi "bloop-control-plane/internal/api/runtime"
 	customerapi "bloop-control-plane/internal/api/customer"
 	onboardingapi "bloop-control-plane/internal/api/onboarding"
 	sessionapi "bloop-control-plane/internal/api/session"
@@ -17,17 +18,20 @@ import (
 	"bloop-control-plane/internal/service"
 	"bloop-control-plane/internal/session"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type RouterDeps struct {
-	CustomerRepo   repository.CustomerRepository
-	AdminRepo      repository.AdminRepository
-	OnboardingRepo repository.OnboardingRepository
-	SessionRepo    repository.SessionRepository
-	RuntimeRepo    runtime.Repository
-	SignupService  *service.SignupService
-	Config         *config.Config
-	IsReady        func() bool
+	CustomerRepo               repository.CustomerRepository
+	AdminRepo                  repository.AdminRepository
+	OnboardingRepo             repository.OnboardingRepository
+	SessionRepo                repository.SessionRepository
+	RuntimeRepo                runtime.Repository
+	SignupService              *service.SignupService
+	RuntimeInstallationService *service.RuntimeInstallationService
+	Config                     *config.Config
+	IsReady                    func() bool
+	DBPool                     *pgxpool.Pool
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -74,13 +78,15 @@ func NewRouter(deps RouterDeps) http.Handler {
 	}
 	sessionHandler := &sessionapi.Handler{Service: service.NewSessionService(deps.SessionRepo), CookieName: cfg.SessionCookieName, CookieSecure: cfg.SessionCookieSecure, CookieDomain: cfg.SessionCookieDomain}
 
+	prototypeAccountID := "acct_default"
 	prototypeCustomer := session.Resolver{
-		PrototypeAccountID: "acct_default",
+		PrototypeAccountID: prototypeAccountID,
 		PrototypeUserID:    "user_gene",
 		PrototypeRole:      "customer",
 		AllowPrototype:     cfg.AllowDevAuthFallback,
 		CookieName:         cfg.SessionCookieName,
 		Tokens:             tokenManager,
+		SessionVersions:    deps.SessionRepo,
 	}
 	prototypeAdmin := session.Resolver{
 		PrototypeUserID: "user_gene",
@@ -88,12 +94,20 @@ func NewRouter(deps RouterDeps) http.Handler {
 		AllowPrototype:  cfg.AllowDevAuthFallback,
 		CookieName:      cfg.SessionCookieName,
 		Tokens:          tokenManager,
+		SessionVersions: deps.SessionRepo,
 	}
 
 	r.Route("/api/session", func(sr chi.Router) {
 		sr.Use(prototypeCustomer.Middleware)
 		sessionapi.Mount(sr, sessionHandler)
 	})
+
+	if deps.DBPool != nil {
+		r.Route("/api/runtime", func(sr chi.Router) {
+			sr.Use(prototypeCustomer.Middleware)
+			runtimeapi.Mount(sr, &runtimeapi.Handler{Pool: deps.DBPool, IngestSecret: cfg.RuntimeIngestSecret, PrototypeMode: cfg.PrototypeMode || cfg.AllowDevAuthFallback, PrototypeAccountID: prototypeAccountID, RuntimeInstallations: deps.RuntimeInstallationService})
+		})
+	}
 
 	r.Route("/api/customer", func(sr chi.Router) {
 		sr.Use(prototypeCustomer.Middleware)

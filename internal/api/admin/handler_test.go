@@ -32,6 +32,13 @@ func (f *fakeAdminRepo) OverviewStats(ctx context.Context) (int, int, int, error
 	return f.overviewCounts[0], f.overviewCounts[1], f.overviewCounts[2], nil
 }
 
+func (f *fakeAdminRepo) RuntimeInstallationStats(ctx context.Context) (int, int, int, int, error) {
+	if f.err != nil {
+		return 0, 0, 0, 0, f.err
+	}
+	return 0, 0, 0, 0, nil
+}
+
 func (f *fakeAdminRepo) ListUsers(ctx context.Context) ([]models.User, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -71,7 +78,7 @@ func TestOverviewReturnsJSON(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	stats := resp["overviewStats"].([]any)
-	if len(stats) != 3 {
+	if len(stats) != 7 {
 		t.Fatalf("unexpected stats response: %+v", resp)
 	}
 }

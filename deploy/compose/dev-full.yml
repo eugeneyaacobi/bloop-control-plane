@@ -9,6 +9,12 @@ services:
       - "35432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bloop -d bloop_control_plane"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
 
   mailpit:
     image: axllent/mailpit:latest
@@ -28,12 +34,16 @@ services:
       SMTP_FROM: noreply@bloop.to
       VERIFICATION_TOKEN_TTL_SECONDS: 3600
       SESSION_SECRET: dev-full-stack-session-secret
-      ALLOW_DEV_AUTH_FALLBACK: "false"
+      RUNTIME_INGEST_SECRET: dev-full-stack-runtime-secret
+      ALLOW_DEV_AUTH_FALLBACK: "true"
+      PROTOTYPE_MODE: "true"
     ports:
       - "38081:8081"
     depends_on:
-      - postgres
-      - mailpit
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
 
 volumes:
   pgdata:

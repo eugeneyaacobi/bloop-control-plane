@@ -19,6 +19,7 @@
 - Decide how `bloop-control-plane` will synchronize runtime-derived tunnel state from `bloop-tunnel`
 - Add persistent audit/review workflows beyond the initial seed/demo data
 - Replace in-memory fallback paths with cleaner explicit dev/test strategies
+- Replace dev-only prototype account normalization in runtime ingest with a production identity contract between relay/client/runtime and control-plane account ids
 
 ### Frontend integration follow-up
 - Replace mocked selectors in `bloop-frontend` with real API adapters once control-plane endpoints stabilize
