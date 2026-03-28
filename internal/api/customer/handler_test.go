@@ -26,6 +26,8 @@ type fakeCustomerRepo struct {
 	lastAccountID    string
 	lastCreate       repository.CreateTunnelParams
 	lastUpdate       repository.UpdateTunnelParams
+	deletedTunnelID  string
+	deleteErr        error
 	err              error
 }
 
@@ -75,6 +77,15 @@ func (f *fakeCustomerRepo) UpdateTunnel(ctx context.Context, accountID, tunnelID
 		return f.updatedTunnel, nil
 	}
 	return &models.Tunnel{ID: tunnelID, Hostname: "api.bloop.to", Target: params.Target, Access: params.Access, Status: "healthy", Region: params.Region}, nil
+}
+
+func (f *fakeCustomerRepo) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
+	f.lastAccountID = accountID
+	f.deletedTunnelID = tunnelID
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	return nil
 }
 
 func withCustomerSession(req *http.Request, accountID string) *http.Request {
@@ -179,6 +190,25 @@ func TestUpdateTunnelReturnsJSON(t *testing.T) {
 	}
 }
 
+func TestDeleteTunnelReturnsNoContent(t *testing.T) {
+	repo := &fakeCustomerRepo{}
+	h := &Handler{Service: service.NewCustomerService(repo, nil)}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "api")
+	req := withCustomerSession(httptest.NewRequest(http.MethodDelete, "/tunnels/api", nil), "acct_default")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.DeleteTunnel(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected %d got %d", http.StatusNoContent, w.Code)
+	}
+	if repo.deletedTunnelID != "api" {
+		t.Fatalf("expected deleted tunnel api got %q", repo.deletedTunnelID)
+	}
+}
+
 func TestCreateTunnelRejectsBadInput(t *testing.T) {
 	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
 	for _, tc := range []string{
@@ -229,7 +259,7 @@ func TestCreateTunnelRejectsConflict(t *testing.T) {
 
 func TestCustomerHandlersRequireSession(t *testing.T) {
 	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
-	for _, fn := range []func(http.ResponseWriter, *http.Request){h.Workspace, h.Tunnels, h.CreateTunnel} {
+	for _, fn := range []func(http.ResponseWriter, *http.Request){h.Workspace, h.Tunnels, h.CreateTunnel, h.DeleteTunnel} {
 		w := httptest.NewRecorder()
 		body := bytes.NewBufferString(`{"hostname":"api.bloop.to","target":"svc:8080"}`)
 		req := httptest.NewRequest(http.MethodGet, "/", body)

@@ -9,6 +9,7 @@ import (
 	"bloop-control-plane/internal/models"
 	"bloop-control-plane/internal/repository"
 	"bloop-control-plane/internal/runtime"
+	"github.com/jackc/pgx/v5"
 )
 
 var ErrTunnelAlreadyExists = errors.New("tunnel already exists")
@@ -109,6 +110,17 @@ func (s *CustomerService) UpdateTunnel(ctx context.Context, accountID, tunnelID 
 		return nil, ErrTunnelNotFound
 	}
 	return updated, nil
+}
+
+func (s *CustomerService) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
+	err := s.repo.DeleteTunnel(ctx, accountID, tunnelID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrTunnelNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 func summaryString(total, protected, degraded int) string {

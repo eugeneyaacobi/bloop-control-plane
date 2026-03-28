@@ -110,7 +110,7 @@ func TestHTTPReadEndpointsReturnJSON(t *testing.T) {
 	}
 }
 
-func TestHTTPCustomerTunnelCreateAndUpdateFlow(t *testing.T) {
+func TestHTTPCustomerTunnelCrudFlow(t *testing.T) {
 	pool, router, _ := setupHTTPTest(t)
 	defer pool.Close()
 
@@ -157,14 +157,21 @@ func TestHTTPCustomerTunnelCreateAndUpdateFlow(t *testing.T) {
 		t.Fatalf("unexpected updated tunnel: %+v", updated)
 	}
 
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/customer/tunnels/new-api-bloop-to", nil)
+	deleteW := httptest.NewRecorder()
+	router.ServeHTTP(deleteW, deleteReq)
+	if deleteW.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 deleting tunnel got %d body=%s", deleteW.Code, deleteW.Body.String())
+	}
+
 	getReq := httptest.NewRequest(http.MethodGet, "/api/customer/tunnels/new-api-bloop-to", nil)
 	getW := httptest.NewRecorder()
 	router.ServeHTTP(getW, getReq)
-	if getW.Code != http.StatusOK {
-		t.Fatalf("expected 200 fetching created tunnel got %d body=%s", getW.Code, getW.Body.String())
+	if getW.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 fetching deleted tunnel got %d body=%s", getW.Code, getW.Body.String())
 	}
 
-	dupReq := httptest.NewRequest(http.MethodPost, "/api/customer/tunnels", bytes.NewBufferString(`{"hostname":"new-api.bloop.to","target":"svc:9090"}`))
+	dupReq := httptest.NewRequest(http.MethodPost, "/api/customer/tunnels", bytes.NewBufferString(`{"hostname":"api.bloop.to","target":"svc:9090"}`))
 	dupReq.Header.Set("Content-Type", "application/json")
 	dupW := httptest.NewRecorder()
 	router.ServeHTTP(dupW, dupReq)

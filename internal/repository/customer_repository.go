@@ -29,6 +29,7 @@ type CustomerRepository interface {
 	GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error)
 	CreateTunnel(ctx context.Context, accountID string, params CreateTunnelParams) (*models.Tunnel, error)
 	UpdateTunnel(ctx context.Context, accountID, tunnelID string, params UpdateTunnelParams) (*models.Tunnel, error)
+	DeleteTunnel(ctx context.Context, accountID, tunnelID string) error
 }
 
 type InMemoryCustomerRepository struct {
@@ -93,4 +94,15 @@ func (r *InMemoryCustomerRepository) UpdateTunnel(ctx context.Context, accountID
 		return &tunnel, nil
 	}
 	return nil, nil
+}
+
+func (r *InMemoryCustomerRepository) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
+	for i, tunnel := range r.Tunnels {
+		if tunnel.ID != tunnelID {
+			continue
+		}
+		r.Tunnels = append(r.Tunnels[:i], r.Tunnels[i+1:]...)
+		return nil
+	}
+	return nil
 }

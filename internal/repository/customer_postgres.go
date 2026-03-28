@@ -112,3 +112,14 @@ func (r *PostgresCustomerRepository) UpdateTunnel(ctx context.Context, accountID
 	}
 	return &tunnel, nil
 }
+
+func (r *PostgresCustomerRepository) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
+	result, err := r.pool.Exec(ctx, `DELETE FROM tunnels WHERE account_id = $1 AND id = $2`, accountID, tunnelID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
