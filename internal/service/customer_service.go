@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -15,16 +16,21 @@ import (
 var ErrTunnelAlreadyExists = errors.New("tunnel already exists")
 var ErrTunnelNotFound = errors.New("tunnel not found")
 
+type AuditRecorder interface {
+	Record(ctx context.Context, eventType, actorID, targetType, targetID string, metadata string) error
+}
+
 type CustomerService struct {
 	repo    repository.CustomerRepository
 	runtime runtime.Repository
+	audit   AuditRecorder
 }
 
-func NewCustomerService(repo repository.CustomerRepository, runtimeRepo runtime.Repository) *CustomerService {
+func NewCustomerService(repo repository.CustomerRepository, runtimeRepo runtime.Repository, auditRecorder AuditRecorder) *CustomerService {
 	if runtimeRepo == nil {
 		runtimeRepo = runtime.NewStubRepository()
 	}
-	return &CustomerService{repo: repo, runtime: runtimeRepo}
+	return &CustomerService{repo: repo, runtime: runtimeRepo, audit: auditRecorder}
 }
 
 type CustomerWorkspaceResponse struct {
@@ -75,7 +81,7 @@ func (s *CustomerService) GetTunnelByID(ctx context.Context, accountID, tunnelID
 	return s.repo.GetTunnelByID(ctx, accountID, tunnelID)
 }
 
-func (s *CustomerService) CreateTunnel(ctx context.Context, accountID string, input CreateTunnelInput) (*models.Tunnel, error) {
+func (s *CustomerService) CreateTunnel(ctx context.Context, actorID, accountID string, input CreateTunnelInput) (*models.Tunnel, error) {
 	access := strings.TrimSpace(input.Access)
 	if access == "" {
 		access = "token-protected"
@@ -94,10 +100,11 @@ func (s *CustomerService) CreateTunnel(ctx context.Context, accountID string, in
 		}
 		return nil, err
 	}
+	s.recordTunnelEvent(ctx, "customer_tunnel.created", actorID, accountID, created)
 	return created, nil
 }
 
-func (s *CustomerService) UpdateTunnel(ctx context.Context, accountID, tunnelID string, input UpdateTunnelInput) (*models.Tunnel, error) {
+func (s *CustomerService) UpdateTunnel(ctx context.Context, actorID, accountID, tunnelID string, input UpdateTunnelInput) (*models.Tunnel, error) {
 	updated, err := s.repo.UpdateTunnel(ctx, accountID, tunnelID, repository.UpdateTunnelParams{
 		Target: strings.TrimSpace(input.Target),
 		Access: strings.TrimSpace(input.Access),
@@ -109,18 +116,46 @@ func (s *CustomerService) UpdateTunnel(ctx context.Context, accountID, tunnelID 
 	if updated == nil {
 		return nil, ErrTunnelNotFound
 	}
+	s.recordTunnelEvent(ctx, "customer_tunnel.updated", actorID, accountID, updated)
 	return updated, nil
 }
 
-func (s *CustomerService) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
-	err := s.repo.DeleteTunnel(ctx, accountID, tunnelID)
+func (s *CustomerService) DeleteTunnel(ctx context.Context, actorID, accountID, tunnelID string) error {
+	tunnel, err := s.repo.GetTunnelByID(ctx, accountID, tunnelID)
+	if err != nil {
+		return err
+	}
+	if tunnel == nil {
+		return ErrTunnelNotFound
+	}
+
+	err = s.repo.DeleteTunnel(ctx, accountID, tunnelID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrTunnelNotFound
 		}
 		return err
 	}
+	s.recordTunnelEvent(ctx, "customer_tunnel.deleted", actorID, accountID, tunnel)
 	return nil
+}
+
+func (s *CustomerService) recordTunnelEvent(ctx context.Context, eventType, actorID, accountID string, tunnel *models.Tunnel) {
+	if s.audit == nil || tunnel == nil {
+		return
+	}
+	meta, err := json.Marshal(map[string]any{
+		"accountId": accountID,
+		"hostname":  tunnel.Hostname,
+		"target":    tunnel.Target,
+		"access":    tunnel.Access,
+		"status":    tunnel.Status,
+		"region":    tunnel.Region,
+	})
+	if err != nil {
+		return
+	}
+	_ = s.audit.Record(ctx, eventType, actorID, "tunnel", tunnel.ID, string(meta))
 }
 
 func summaryString(total, protected, degraded int) string {

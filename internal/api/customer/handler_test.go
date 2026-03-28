@@ -31,6 +31,23 @@ type fakeCustomerRepo struct {
 	err              error
 }
 
+type recordedEvent struct {
+	eventType  string
+	actorID    string
+	targetType string
+	targetID   string
+	metadata   string
+}
+
+type fakeAuditRecorder struct {
+	events []recordedEvent
+}
+
+func (f *fakeAuditRecorder) Record(ctx context.Context, eventType, actorID, targetType, targetID string, metadata string) error {
+	f.events = append(f.events, recordedEvent{eventType: eventType, actorID: actorID, targetType: targetType, targetID: targetID, metadata: metadata})
+	return nil
+}
+
 func (f *fakeCustomerRepo) GetWorkspace(ctx context.Context, accountID string) (models.Account, []models.Tunnel, error) {
 	f.lastAccountID = accountID
 	if f.err != nil {
@@ -94,7 +111,7 @@ func withCustomerSession(req *http.Request, accountID string) *http.Request {
 
 func TestWorkspaceReturnsJSON(t *testing.T) {
 	repo := &fakeCustomerRepo{workspaceAccount: models.Account{ID: "acct_default", DisplayName: "Gene / default-org"}, workspaceTunnels: []models.Tunnel{{ID: "api", Hostname: "api.bloop.to", Access: "public"}}}
-	h := &Handler{Service: service.NewCustomerService(repo, nil)}
+	h := &Handler{Service: service.NewCustomerService(repo, nil, nil)}
 	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/workspace", nil), "acct_from_header")
 	w := httptest.NewRecorder()
 
@@ -119,7 +136,7 @@ func TestWorkspaceReturnsJSON(t *testing.T) {
 }
 
 func TestWorkspaceReturns500OnServiceError(t *testing.T) {
-	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: errors.New("boom")}, nil)}
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: errors.New("boom")}, nil, nil)}
 	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/workspace", nil), "acct_default")
 	w := httptest.NewRecorder()
 
@@ -131,7 +148,7 @@ func TestWorkspaceReturns500OnServiceError(t *testing.T) {
 }
 
 func TestTunnelsReturnsJSON(t *testing.T) {
-	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{listTunnels: []models.Tunnel{{ID: "api", Hostname: "api.bloop.to"}}}, nil)}
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{listTunnels: []models.Tunnel{{ID: "api", Hostname: "api.bloop.to"}}}, nil, nil)}
 	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels", nil), "acct_default")
 	w := httptest.NewRecorder()
 
@@ -147,7 +164,7 @@ func TestTunnelsReturnsJSON(t *testing.T) {
 
 func TestCreateTunnelReturnsCreatedJSON(t *testing.T) {
 	repo := &fakeCustomerRepo{}
-	h := &Handler{Service: service.NewCustomerService(repo, nil)}
+	h := &Handler{Service: service.NewCustomerService(repo, nil, nil)}
 	body := bytes.NewBufferString(`{"hostname":"new.bloop.to","target":"svc:8080","access":"basic-auth","region":"iad-1"}`)
 	req := withCustomerSession(httptest.NewRequest(http.MethodPost, "/tunnels", body), "acct_default")
 	w := httptest.NewRecorder()
@@ -173,7 +190,7 @@ func TestCreateTunnelReturnsCreatedJSON(t *testing.T) {
 
 func TestUpdateTunnelReturnsJSON(t *testing.T) {
 	repo := &fakeCustomerRepo{}
-	h := &Handler{Service: service.NewCustomerService(repo, nil)}
+	h := &Handler{Service: service.NewCustomerService(repo, nil, nil)}
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", "api")
 	req := withCustomerSession(httptest.NewRequest(http.MethodPatch, "/tunnels/api", bytes.NewBufferString(`{"target":"svc:9090","access":"public","region":"ord-1"}`)), "acct_default")
@@ -191,8 +208,8 @@ func TestUpdateTunnelReturnsJSON(t *testing.T) {
 }
 
 func TestDeleteTunnelReturnsNoContent(t *testing.T) {
-	repo := &fakeCustomerRepo{}
-	h := &Handler{Service: service.NewCustomerService(repo, nil)}
+	repo := &fakeCustomerRepo{tunnel: &models.Tunnel{ID: "api", Hostname: "api.bloop.to", Target: "svc:8080", Access: "public", Status: "healthy", Region: "iad-1"}}
+	h := &Handler{Service: service.NewCustomerService(repo, nil, nil)}
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", "api")
 	req := withCustomerSession(httptest.NewRequest(http.MethodDelete, "/tunnels/api", nil), "acct_default")
@@ -209,8 +226,59 @@ func TestDeleteTunnelReturnsNoContent(t *testing.T) {
 	}
 }
 
+func TestTunnelCrudWritesAuditEvents(t *testing.T) {
+	audit := &fakeAuditRecorder{}
+	repo := &fakeCustomerRepo{tunnel: &models.Tunnel{ID: "api", Hostname: "api.bloop.to", Target: "svc:8080", Access: "public", Status: "healthy", Region: "iad-1"}}
+	h := &Handler{Service: service.NewCustomerService(repo, nil, audit)}
+
+	createReq := withCustomerSession(httptest.NewRequest(http.MethodPost, "/tunnels", bytes.NewBufferString(`{"hostname":"new.bloop.to","target":"svc:8080","access":"basic-auth","region":"iad-1"}`)), "acct_default")
+	createW := httptest.NewRecorder()
+	h.CreateTunnel(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("expected create 201 got %d body=%s", createW.Code, createW.Body.String())
+	}
+
+	updateCtx := chi.NewRouteContext()
+	updateCtx.URLParams.Add("id", "api")
+	updateReq := withCustomerSession(httptest.NewRequest(http.MethodPatch, "/tunnels/api", bytes.NewBufferString(`{"target":"svc:9090","access":"token-protected","region":"ord-1"}`)), "acct_default")
+	updateReq = updateReq.WithContext(context.WithValue(updateReq.Context(), chi.RouteCtxKey, updateCtx))
+	updateW := httptest.NewRecorder()
+	h.UpdateTunnel(updateW, updateReq)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("expected update 200 got %d body=%s", updateW.Code, updateW.Body.String())
+	}
+
+	deleteCtx := chi.NewRouteContext()
+	deleteCtx.URLParams.Add("id", "api")
+	deleteReq := withCustomerSession(httptest.NewRequest(http.MethodDelete, "/tunnels/api", nil), "acct_default")
+	deleteReq = deleteReq.WithContext(context.WithValue(deleteReq.Context(), chi.RouteCtxKey, deleteCtx))
+	deleteW := httptest.NewRecorder()
+	h.DeleteTunnel(deleteW, deleteReq)
+	if deleteW.Code != http.StatusNoContent {
+		t.Fatalf("expected delete 204 got %d body=%s", deleteW.Code, deleteW.Body.String())
+	}
+
+	if len(audit.events) != 3 {
+		t.Fatalf("expected 3 audit events got %d", len(audit.events))
+	}
+	for i, want := range []string{"customer_tunnel.created", "customer_tunnel.updated", "customer_tunnel.deleted"} {
+		if audit.events[i].eventType != want {
+			t.Fatalf("expected event %d to be %s got %+v", i, want, audit.events[i])
+		}
+		if audit.events[i].actorID != "user_test" {
+			t.Fatalf("expected actor user_test got %+v", audit.events[i])
+		}
+		if audit.events[i].targetType != "tunnel" {
+			t.Fatalf("expected target type tunnel got %+v", audit.events[i])
+		}
+		if audit.events[i].metadata == "" {
+			t.Fatalf("expected metadata in event %+v", audit.events[i])
+		}
+	}
+}
+
 func TestCreateTunnelRejectsBadInput(t *testing.T) {
-	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil, nil)}
 	for _, tc := range []string{
 		`{"hostname":"","target":"svc:8080"}`,
 		`{"hostname":"bad host","target":"svc:8080"}`,
@@ -227,7 +295,7 @@ func TestCreateTunnelRejectsBadInput(t *testing.T) {
 }
 
 func TestUpdateTunnelRejectsBadInput(t *testing.T) {
-	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil, nil)}
 	for _, tc := range []string{
 		`{"target":"","access":"public"}`,
 		`{"target":"bad target","access":"public"}`,
@@ -246,7 +314,7 @@ func TestUpdateTunnelRejectsBadInput(t *testing.T) {
 }
 
 func TestCreateTunnelRejectsConflict(t *testing.T) {
-	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: service.ErrTunnelAlreadyExists}, nil)}
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: service.ErrTunnelAlreadyExists}, nil, nil)}
 	req := withCustomerSession(httptest.NewRequest(http.MethodPost, "/tunnels", bytes.NewBufferString(`{"hostname":"dup.bloop.to","target":"svc:8080"}`)), "acct_default")
 	w := httptest.NewRecorder()
 
@@ -258,7 +326,7 @@ func TestCreateTunnelRejectsConflict(t *testing.T) {
 }
 
 func TestCustomerHandlersRequireSession(t *testing.T) {
-	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil, nil)}
 	for _, fn := range []func(http.ResponseWriter, *http.Request){h.Workspace, h.Tunnels, h.CreateTunnel, h.DeleteTunnel} {
 		w := httptest.NewRecorder()
 		body := bytes.NewBufferString(`{"hostname":"api.bloop.to","target":"svc:8080"}`)
@@ -271,7 +339,7 @@ func TestCustomerHandlersRequireSession(t *testing.T) {
 }
 
 func TestTunnelDetailPaths(t *testing.T) {
-	good := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{tunnel: &models.Tunnel{ID: "api", Hostname: "api.bloop.to"}}, nil)}
+	good := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{tunnel: &models.Tunnel{ID: "api", Hostname: "api.bloop.to"}}, nil, nil)}
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", "api")
 	req := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels/api", nil), "acct_default")
@@ -292,7 +360,7 @@ func TestTunnelDetailPaths(t *testing.T) {
 		t.Fatalf("expected %d got %d", http.StatusBadRequest, badW.Code)
 	}
 
-	notFound := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{tunnel: nil}, nil)}
+	notFound := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{tunnel: nil}, nil, nil)}
 	nfReq := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels/missing", nil), "acct_default")
 	nfCtx := chi.NewRouteContext()
 	nfCtx.URLParams.Add("id", "missing")
@@ -303,7 +371,7 @@ func TestTunnelDetailPaths(t *testing.T) {
 		t.Fatalf("expected %d got %d", http.StatusNotFound, nfW.Code)
 	}
 
-	broken := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: errors.New("boom")}, nil)}
+	broken := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{err: errors.New("boom")}, nil, nil)}
 	errReq := withCustomerSession(httptest.NewRequest(http.MethodGet, "/tunnels/api", nil), "acct_default")
 	errCtx := chi.NewRouteContext()
 	errCtx.URLParams.Add("id", "api")

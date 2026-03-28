@@ -22,7 +22,7 @@ func (h *Handler) DeleteTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteTunnel(r.Context(), sess.AccountID, id); err != nil {
+	if err := h.Service.DeleteTunnel(r.Context(), sess.UserID, sess.AccountID, id); err != nil {
 		if errors.Is(err, service.ErrTunnelNotFound) {
 			http.NotFound(w, r)
 			return

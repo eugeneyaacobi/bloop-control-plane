@@ -64,7 +64,8 @@ func setupHTTPTest(t *testing.T) (*pgxpool.Pool, http.Handler, *captureEmailSend
 	runtimeRepo := repository.NewPostgresRuntimeRepository(pool)
 	email := &captureEmailSender{}
 	cfg := &config.Config{VerificationTokenTTL: time.Hour, AllowDevAuthFallback: true, SessionSecret: "integration-test-secret", SessionCookieName: session.DefaultCookieName}
-	signupSvc := service.NewSignupService(signupRepo, email, audit.New(pool), cfg)
+	auditRecorder := audit.New(pool)
+	signupSvc := service.NewSignupService(signupRepo, email, auditRecorder, cfg)
 	router := api.NewRouter(api.RouterDeps{
 		CustomerRepo:   customerRepo,
 		AdminRepo:      adminRepo,
@@ -72,6 +73,7 @@ func setupHTTPTest(t *testing.T) (*pgxpool.Pool, http.Handler, *captureEmailSend
 		SessionRepo:    sessionRepo,
 		RuntimeRepo:    runtimeRepo,
 		SignupService:  signupSvc,
+		CustomerAudit:  auditRecorder,
 		Config:         cfg,
 		IsReady:        func() bool { return true },
 	})
@@ -178,6 +180,38 @@ func TestHTTPCustomerTunnelCrudFlow(t *testing.T) {
 	if dupW.Code != http.StatusConflict {
 		t.Fatalf("expected 409 got %d body=%s", dupW.Code, dupW.Body.String())
 	}
+
+	rows, err := pool.Query(context.Background(), "select event_type, target_id, metadata::text from audit_events where event_type like 'customer_tunnel.%' order by created_at asc")
+	if err != nil {
+		t.Fatalf("query customer tunnel audit events: %v", err)
+	}
+	defer rows.Close()
+	var events []string
+	var targetIDs []string
+	var metadatas []string
+	for rows.Next() {
+		var eventType, targetID, metadata string
+		if err := rows.Scan(&eventType, &targetID, &metadata); err != nil {
+			t.Fatalf("scan customer tunnel audit event: %v", err)
+		}
+		events = append(events, eventType)
+		targetIDs = append(targetIDs, targetID)
+		metadatas = append(metadatas, metadata)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 customer tunnel audit events got %d (%v)", len(events), events)
+	}
+	for i, want := range []string{"customer_tunnel.created", "customer_tunnel.updated", "customer_tunnel.deleted"} {
+		if events[i] != want {
+			t.Fatalf("expected event %d to be %s got %s", i, want, events[i])
+		}
+		if targetIDs[i] == "" {
+			t.Fatalf("expected target id for event %s", events[i])
+		}
+		if !bytes.Contains([]byte(metadatas[i]), []byte(`"accountId": "acct_default"`)) && !bytes.Contains([]byte(metadatas[i]), []byte(`"accountId":"acct_default"`)) {
+			t.Fatalf("expected account id in metadata for %s: %s", events[i], metadatas[i])
+		}
+	}
 }
 
 func TestHTTPSignupFlowAndAuditEvents(t *testing.T) {
@@ -256,13 +290,15 @@ func TestHTTPSessionMeUsesSignedTokenWhenFallbackDisabled(t *testing.T) {
 	sessionRepo := repository.NewPostgresSessionRepository(pool)
 	runtimeRepo := repository.NewPostgresRuntimeRepository(pool)
 	cfg := &config.Config{VerificationTokenTTL: time.Hour, AllowDevAuthFallback: false, SessionSecret: "integration-test-secret", SessionCookieName: session.DefaultCookieName}
+	auditRecorder := audit.New(pool)
 	router := api.NewRouter(api.RouterDeps{
 		CustomerRepo:   customerRepo,
 		AdminRepo:      adminRepo,
 		OnboardingRepo: onboardingRepo,
 		SessionRepo:    sessionRepo,
 		RuntimeRepo:    runtimeRepo,
-		SignupService:  service.NewSignupService(signupRepo, &captureEmailSender{}, audit.New(pool), cfg),
+		SignupService:  service.NewSignupService(signupRepo, &captureEmailSender{}, auditRecorder, cfg),
+		CustomerAudit:  auditRecorder,
 		Config:         cfg,
 		IsReady:        func() bool { return true },
 	})

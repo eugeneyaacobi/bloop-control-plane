@@ -17,9 +17,9 @@ type CustomerWorkspaceService interface {
 	GetWorkspace(ctx context.Context, accountID string) (*service.CustomerWorkspaceResponse, error)
 	ListTunnels(ctx context.Context, accountID string) ([]models.Tunnel, error)
 	GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error)
-	CreateTunnel(ctx context.Context, accountID string, input service.CreateTunnelInput) (*models.Tunnel, error)
-	UpdateTunnel(ctx context.Context, accountID, tunnelID string, input service.UpdateTunnelInput) (*models.Tunnel, error)
-	DeleteTunnel(ctx context.Context, accountID, tunnelID string) error
+	CreateTunnel(ctx context.Context, actorID, accountID string, input service.CreateTunnelInput) (*models.Tunnel, error)
+	UpdateTunnel(ctx context.Context, actorID, accountID, tunnelID string, input service.UpdateTunnelInput) (*models.Tunnel, error)
+	DeleteTunnel(ctx context.Context, actorID, accountID, tunnelID string) error
 }
 
 func (h *Handler) Workspace(w http.ResponseWriter, r *http.Request) {

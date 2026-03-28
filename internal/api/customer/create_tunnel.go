@@ -64,7 +64,7 @@ func (h *Handler) CreateTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.Service.CreateTunnel(r.Context(), sess.AccountID, service.CreateTunnelInput{
+	created, err := h.Service.CreateTunnel(r.Context(), sess.UserID, sess.AccountID, service.CreateTunnelInput{
 		Hostname: req.Hostname,
 		Target:   req.Target,
 		Access:   req.Access,

@@ -26,6 +26,7 @@ type RouterDeps struct {
 	SessionRepo    repository.SessionRepository
 	RuntimeRepo    runtime.Repository
 	SignupService  *service.SignupService
+	CustomerAudit  service.AuditRecorder
 	Config         *config.Config
 	IsReady        func() bool
 }
@@ -58,7 +59,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 		}
 	}
 
-	customerService := service.NewCustomerService(deps.CustomerRepo, deps.RuntimeRepo)
+	customerService := service.NewCustomerService(deps.CustomerRepo, deps.RuntimeRepo, deps.CustomerAudit)
 	customerHandler := &customerapi.Handler{Service: customerService}
 	adminService := service.NewAdminService(deps.AdminRepo, deps.RuntimeRepo)
 	adminHandler := &adminapi.Handler{Service: adminService}

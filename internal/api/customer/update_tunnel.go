@@ -59,7 +59,7 @@ func (h *Handler) UpdateTunnel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := h.Service.UpdateTunnel(r.Context(), sess.AccountID, id, service.UpdateTunnelInput{
+	updated, err := h.Service.UpdateTunnel(r.Context(), sess.UserID, sess.AccountID, id, service.UpdateTunnelInput{
 		Target: req.Target,
 		Access: req.Access,
 		Region: req.Region,
