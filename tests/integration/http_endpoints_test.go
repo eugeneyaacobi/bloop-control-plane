@@ -110,7 +110,7 @@ func TestHTTPReadEndpointsReturnJSON(t *testing.T) {
 	}
 }
 
-func TestHTTPCustomerTunnelCreateFlow(t *testing.T) {
+func TestHTTPCustomerTunnelCreateAndUpdateFlow(t *testing.T) {
 	pool, router, _ := setupHTTPTest(t)
 	defer pool.Close()
 
@@ -135,6 +135,26 @@ func TestHTTPCustomerTunnelCreateFlow(t *testing.T) {
 	}
 	if created.Hostname != "new-api.bloop.to" || created.Target != "svc:9090" || created.Access != "token-protected" || created.Status != "healthy" {
 		t.Fatalf("unexpected created tunnel: %+v", created)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/customer/tunnels/new-api-bloop-to", bytes.NewBufferString(`{"target":"svc:9443","access":"basic-auth","region":"iad-1"}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateW := httptest.NewRecorder()
+	router.ServeHTTP(updateW, updateReq)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("expected 200 updating tunnel got %d body=%s", updateW.Code, updateW.Body.String())
+	}
+	var updated struct {
+		ID     string `json:"id"`
+		Target string `json:"target"`
+		Access string `json:"access"`
+		Region string `json:"region"`
+	}
+	if err := json.Unmarshal(updateW.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if updated.Target != "svc:9443" || updated.Access != "basic-auth" || updated.Region != "iad-1" {
+		t.Fatalf("unexpected updated tunnel: %+v", updated)
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/customer/tunnels/new-api-bloop-to", nil)

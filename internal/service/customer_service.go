@@ -12,6 +12,7 @@ import (
 )
 
 var ErrTunnelAlreadyExists = errors.New("tunnel already exists")
+var ErrTunnelNotFound = errors.New("tunnel not found")
 
 type CustomerService struct {
 	repo    repository.CustomerRepository
@@ -38,6 +39,12 @@ type CreateTunnelInput struct {
 	Target   string `json:"target"`
 	Access   string `json:"access"`
 	Region   string `json:"region,omitempty"`
+}
+
+type UpdateTunnelInput struct {
+	Target string `json:"target"`
+	Access string `json:"access"`
+	Region string `json:"region,omitempty"`
 }
 
 func (s *CustomerService) GetWorkspace(ctx context.Context, accountID string) (*CustomerWorkspaceResponse, error) {
@@ -87,6 +94,21 @@ func (s *CustomerService) CreateTunnel(ctx context.Context, accountID string, in
 		return nil, err
 	}
 	return created, nil
+}
+
+func (s *CustomerService) UpdateTunnel(ctx context.Context, accountID, tunnelID string, input UpdateTunnelInput) (*models.Tunnel, error) {
+	updated, err := s.repo.UpdateTunnel(ctx, accountID, tunnelID, repository.UpdateTunnelParams{
+		Target: strings.TrimSpace(input.Target),
+		Access: strings.TrimSpace(input.Access),
+		Region: strings.TrimSpace(input.Region),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, ErrTunnelNotFound
+	}
+	return updated, nil
 }
 
 func summaryString(total, protected, degraded int) string {

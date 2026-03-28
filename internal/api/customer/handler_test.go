@@ -22,8 +22,10 @@ type fakeCustomerRepo struct {
 	listTunnels      []models.Tunnel
 	tunnel           *models.Tunnel
 	createdTunnel    *models.Tunnel
+	updatedTunnel    *models.Tunnel
 	lastAccountID    string
 	lastCreate       repository.CreateTunnelParams
+	lastUpdate       repository.UpdateTunnelParams
 	err              error
 }
 
@@ -61,6 +63,18 @@ func (f *fakeCustomerRepo) CreateTunnel(ctx context.Context, accountID string, p
 		return f.createdTunnel, nil
 	}
 	return &models.Tunnel{ID: "new-tunnel", Hostname: params.Hostname, Target: params.Target, Access: params.Access, Status: params.Status, Region: params.Region}, nil
+}
+
+func (f *fakeCustomerRepo) UpdateTunnel(ctx context.Context, accountID, tunnelID string, params repository.UpdateTunnelParams) (*models.Tunnel, error) {
+	f.lastAccountID = accountID
+	f.lastUpdate = params
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.updatedTunnel != nil {
+		return f.updatedTunnel, nil
+	}
+	return &models.Tunnel{ID: tunnelID, Hostname: "api.bloop.to", Target: params.Target, Access: params.Access, Status: "healthy", Region: params.Region}, nil
 }
 
 func withCustomerSession(req *http.Request, accountID string) *http.Request {
@@ -146,6 +160,25 @@ func TestCreateTunnelReturnsCreatedJSON(t *testing.T) {
 	}
 }
 
+func TestUpdateTunnelReturnsJSON(t *testing.T) {
+	repo := &fakeCustomerRepo{}
+	h := &Handler{Service: service.NewCustomerService(repo, nil)}
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "api")
+	req := withCustomerSession(httptest.NewRequest(http.MethodPatch, "/tunnels/api", bytes.NewBufferString(`{"target":"svc:9090","access":"public","region":"ord-1"}`)), "acct_default")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.UpdateTunnel(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d got %d body=%s", http.StatusOK, w.Code, w.Body.String())
+	}
+	if repo.lastUpdate.Target != "svc:9090" || repo.lastUpdate.Access != "public" || repo.lastUpdate.Region != "ord-1" {
+		t.Fatalf("unexpected update params: %+v", repo.lastUpdate)
+	}
+}
+
 func TestCreateTunnelRejectsBadInput(t *testing.T) {
 	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
 	for _, tc := range []string{
@@ -157,6 +190,25 @@ func TestCreateTunnelRejectsBadInput(t *testing.T) {
 		w := httptest.NewRecorder()
 		req := withCustomerSession(httptest.NewRequest(http.MethodPost, "/tunnels", bytes.NewBufferString(tc)), "acct_default")
 		h.CreateTunnel(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected %d got %d for payload %s", http.StatusBadRequest, w.Code, tc)
+		}
+	}
+}
+
+func TestUpdateTunnelRejectsBadInput(t *testing.T) {
+	h := &Handler{Service: service.NewCustomerService(&fakeCustomerRepo{}, nil)}
+	for _, tc := range []string{
+		`{"target":"","access":"public"}`,
+		`{"target":"bad target","access":"public"}`,
+		`{"target":"svc:8080","access":"unknown"}`,
+	} {
+		w := httptest.NewRecorder()
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", "api")
+		req := withCustomerSession(httptest.NewRequest(http.MethodPatch, "/tunnels/api", bytes.NewBufferString(tc)), "acct_default")
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		h.UpdateTunnel(w, req)
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("expected %d got %d for payload %s", http.StatusBadRequest, w.Code, tc)
 		}

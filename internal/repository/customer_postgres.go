@@ -86,3 +86,29 @@ func (r *PostgresCustomerRepository) CreateTunnel(ctx context.Context, accountID
 	}
 	return &tunnel, nil
 }
+
+func (r *PostgresCustomerRepository) UpdateTunnel(ctx context.Context, accountID, tunnelID string, params UpdateTunnelParams) (*models.Tunnel, error) {
+	var tunnel models.Tunnel
+	err := r.pool.QueryRow(ctx, `
+		UPDATE tunnels
+		SET target = $3, access = $4, region = NULLIF($5, '')
+		WHERE account_id = $1 AND id = $2
+		RETURNING id, hostname, target, access, status, COALESCE(region, ''), COALESCE(owner, ''), COALESCE(risk, '')
+	`, accountID, tunnelID, params.Target, params.Access, params.Region).Scan(
+		&tunnel.ID,
+		&tunnel.Hostname,
+		&tunnel.Target,
+		&tunnel.Access,
+		&tunnel.Status,
+		&tunnel.Region,
+		&tunnel.Owner,
+		&tunnel.Risk,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &tunnel, nil
+}

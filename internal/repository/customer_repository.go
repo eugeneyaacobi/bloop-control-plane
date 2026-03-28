@@ -17,11 +17,18 @@ type CreateTunnelParams struct {
 	Risk     string
 }
 
+type UpdateTunnelParams struct {
+	Target string
+	Access string
+	Region string
+}
+
 type CustomerRepository interface {
 	GetWorkspace(ctx context.Context, accountID string) (models.Account, []models.Tunnel, error)
 	ListTunnels(ctx context.Context, accountID string) ([]models.Tunnel, error)
 	GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error)
 	CreateTunnel(ctx context.Context, accountID string, params CreateTunnelParams) (*models.Tunnel, error)
+	UpdateTunnel(ctx context.Context, accountID, tunnelID string, params UpdateTunnelParams) (*models.Tunnel, error)
 }
 
 type InMemoryCustomerRepository struct {
@@ -72,4 +79,18 @@ func (r *InMemoryCustomerRepository) CreateTunnel(ctx context.Context, accountID
 	}
 	r.Tunnels = append(r.Tunnels, tunnel)
 	return &tunnel, nil
+}
+
+func (r *InMemoryCustomerRepository) UpdateTunnel(ctx context.Context, accountID, tunnelID string, params UpdateTunnelParams) (*models.Tunnel, error) {
+	for i, tunnel := range r.Tunnels {
+		if tunnel.ID != tunnelID {
+			continue
+		}
+		tunnel.Target = params.Target
+		tunnel.Access = params.Access
+		tunnel.Region = params.Region
+		r.Tunnels[i] = tunnel
+		return &tunnel, nil
+	}
+	return nil, nil
 }

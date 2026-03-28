@@ -9,4 +9,5 @@ func Mount(r chi.Router, h *Handler) {
 	r.Get("/tunnels", h.Tunnels)
 	r.Post("/tunnels", h.CreateTunnel)
 	r.Get("/tunnels/{id}", h.TunnelDetail)
+	r.Patch("/tunnels/{id}", h.UpdateTunnel)
 }
