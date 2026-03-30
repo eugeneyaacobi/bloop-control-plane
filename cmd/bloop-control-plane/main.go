@@ -78,6 +78,12 @@ func main() {
 		signupService = service.NewSignupService(signupRepo, emailService, auditRecorder, cfg, issuer, provisioningRepo)
 		ready = true
 
+		authRepo := repository.NewPostgresAuthRepository(pool)
+		auditRepo := repository.NewPostgresAuditRepository(pool)
+		lockoutRepo := repository.NewPostgresLockoutRepository(pool)
+		tokenRepo := repository.NewPostgresTokenRepository(pool)
+		webauthnRepo := repository.NewPostgresWebAuthnRepository(pool)
+
 		router := api.NewRouter(api.RouterDeps{
 			CustomerRepo:               customerRepo,
 			AdminRepo:                  adminRepo,
@@ -89,6 +95,11 @@ func main() {
 			Config:                     cfg,
 			IsReady:                    func() bool { return ready },
 			DBPool:                     pool,
+			AuthRepo:                   authRepo,
+			AuditRepo:                  auditRepo,
+			LockoutRepo:                lockoutRepo,
+			TokenRepo:                  tokenRepo,
+			WebAuthnRepo:               webauthnRepo,
 		})
 		logger.Info("control plane starting", "listen_addr", cfg.ListenAddr, "smtp_host", logging.Redact(cfg.SMTPHost), "prototype_mode", cfg.PrototypeMode, "dev_auth_fallback", cfg.AllowDevAuthFallback)
 		if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
