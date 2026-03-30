@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"bloop-control-plane/internal/api"
 	"bloop-control-plane/internal/audit"
@@ -47,8 +46,7 @@ func main() {
 		}
 		defer pool.Close()
 
-		migrationDir := filepath.Join("internal", "db", "migrations")
-		if err := migrations.Apply(context.Background(), pool, migrationDir); err != nil {
+		if err := migrations.Apply(context.Background(), pool); err != nil {
 			fmt.Fprintf(os.Stderr, "apply migrations: %v\n", err)
 			os.Exit(1)
 		}
