@@ -12,6 +12,8 @@ import (
 	customerapi "bloop-control-plane/internal/api/customer"
 	onboardingapi "bloop-control-plane/internal/api/onboarding"
 	sessionapi "bloop-control-plane/internal/api/session"
+	tokensapi "bloop-control-plane/internal/api/tokens"
+	webauthnapi "bloop-control-plane/internal/api/webauthn"
 	"bloop-control-plane/internal/config"
 	"bloop-control-plane/internal/repository"
 	"bloop-control-plane/internal/runtime"
@@ -138,6 +140,28 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Route("/api/auth", func(sr chi.Router) {
 			authapi.Mount(sr, authHandler)
 		})
+	}
+
+	// Token management routes (requires session auth)
+	if deps.TokenRepo != nil && deps.AuditRepo != nil && tokenManager != nil {
+		tokenService := service.NewTokenService(deps.TokenRepo, deps.AuditRepo, cfg)
+		tokenHandler := tokensapi.NewHandler(tokenService)
+		r.Route("/api/tokens", func(sr chi.Router) {
+			sr.Use(prototypeCustomer.Middleware)
+			tokensapi.Mount(sr, tokenHandler)
+		})
+	}
+
+	// WebAuthn routes (requires session auth for registration, public for login begin)
+	if deps.AuthRepo != nil && deps.WebAuthnRepo != nil && deps.AuditRepo != nil && tokenManager != nil {
+		webauthnService, err := service.NewWebAuthnService(deps.AuthRepo, deps.WebAuthnRepo, deps.AuditRepo, cfg)
+		if err == nil {
+			webauthnHandler := webauthnapi.NewHandler(webauthnService, tokenManager, cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionCookieDomain)
+			r.Route("/api/webauthn", func(sr chi.Router) {
+				sr.Use(prototypeCustomer.Middleware)
+				webauthnapi.Mount(sr, webauthnHandler)
+			})
+		}
 	}
 
 	return r
