@@ -2,7 +2,7 @@
 
 **Feature Branch**: `007-tunnel-management-api`
 **Created**: 2026-03-30
-**Status**: Draft
+**Status**: Implemented
 **Input**: bloop-tunnel TUI client needs full CRUD API for tunnel lifecycle management, enrollment, and config validation against bloop-control-plane.
 
 ## Background
