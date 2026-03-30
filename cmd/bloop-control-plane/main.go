@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"bloop-control-plane/internal/api"
 	"bloop-control-plane/internal/audit"
@@ -47,8 +46,7 @@ func main() {
 		}
 		defer pool.Close()
 
-		migrationDir := filepath.Join("internal", "db", "migrations")
-		if err := migrations.Apply(context.Background(), pool, migrationDir); err != nil {
+		if err := migrations.Apply(context.Background(), pool); err != nil {
 			fmt.Fprintf(os.Stderr, "apply migrations: %v\n", err)
 			os.Exit(1)
 		}
@@ -78,6 +76,12 @@ func main() {
 		signupService = service.NewSignupService(signupRepo, emailService, auditRecorder, cfg, issuer, provisioningRepo)
 		ready = true
 
+		authRepo := repository.NewPostgresAuthRepository(pool)
+		auditRepo := repository.NewPostgresAuditRepository(pool)
+		lockoutRepo := repository.NewPostgresLockoutRepository(pool)
+		tokenRepo := repository.NewPostgresTokenRepository(pool)
+		webauthnRepo := repository.NewPostgresWebAuthnRepository(pool)
+
 		router := api.NewRouter(api.RouterDeps{
 			CustomerRepo:               customerRepo,
 			AdminRepo:                  adminRepo,
@@ -89,6 +93,11 @@ func main() {
 			Config:                     cfg,
 			IsReady:                    func() bool { return ready },
 			DBPool:                     pool,
+			AuthRepo:                   authRepo,
+			AuditRepo:                  auditRepo,
+			LockoutRepo:                lockoutRepo,
+			TokenRepo:                  tokenRepo,
+			WebAuthnRepo:               webauthnRepo,
 		})
 		logger.Info("control plane starting", "listen_addr", cfg.ListenAddr, "smtp_host", logging.Redact(cfg.SMTPHost), "prototype_mode", cfg.PrototypeMode, "dev_auth_fallback", cfg.AllowDevAuthFallback)
 		if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {

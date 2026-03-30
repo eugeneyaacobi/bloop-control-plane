@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -44,8 +43,7 @@ func setupHTTPTest(t *testing.T) (*pgxpool.Pool, http.Handler, *captureEmailSend
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
-	migrationsDir := filepath.Join("..", "..", "internal", "db", "migrations")
-	if err := migrations.Apply(context.Background(), pool, migrationsDir); err != nil {
+	if err := migrations.Apply(context.Background(), pool); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
 	for _, table := range []string{"runtime_tunnel_snapshots", "runtime_events", "runtime_tunnel_bindings", "runtime_installation_tokens", "runtime_installations", "audit_events", "email_verifications", "signup_requests", "onboarding_steps", "review_flags", "tunnels", "memberships", "users", "accounts"} {

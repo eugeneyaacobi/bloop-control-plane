@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,8 +23,7 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
-	migrationsDir := filepath.Join("..", "..", "internal", "db", "migrations")
-	if err := migrations.Apply(context.Background(), pool, migrationsDir); err != nil {
+	if err := migrations.Apply(context.Background(), pool); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
 	for _, table := range []string{"audit_events", "email_verifications", "signup_requests", "onboarding_steps", "review_flags", "tunnels", "memberships", "users", "accounts"} {

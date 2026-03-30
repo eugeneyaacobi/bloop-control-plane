@@ -48,7 +48,7 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 	// Validate password
 	if err := security.ValidatePassword(password); err != nil {
 		s.logAuditEvent(ctx, nil, nil, "register_failed", ipAddress, userAgent, false, map[string]interface{}{"reason": "invalid_password"})
-		return nil, &ValidationError{Field: "password", Message: err.Error()}
+		return nil, &ValidationError{Field: "password", Message: "Password must be at least 12 characters. Please choose a longer one."}
 	}
 
 	// Check for breach if enabled
@@ -108,6 +108,7 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 
 // LoginResult holds the result of user login
 type LoginResult struct {
+	User             *repository.UserWithCredentials
 	Session          *session.Context
 	RequiresWebAuthn bool
 }
@@ -188,6 +189,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string, ipAddre
 	s.logAuditEvent(ctx, &user.ID, nil, "login_success", ipAddress, userAgent, true, map[string]interface{}{"webauthn_required": requiresWebAuthn})
 
 	return &LoginResult{
+		User:             user,
 		Session:          sessionCtx,
 		RequiresWebAuthn: requiresWebAuthn,
 	}, nil

@@ -44,7 +44,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.As(err, &conflictErr) {
-			writeJSON(w, http.StatusConflict, models.AuthError{Error: "registration failed"})
+			writeJSON(w, http.StatusConflict, models.AuthError{Error: conflictErr.Error()})
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, models.AuthError{Error: "registration failed"})

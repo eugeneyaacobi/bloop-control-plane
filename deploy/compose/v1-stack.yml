@@ -50,11 +50,11 @@ services:
       mailpit:
         condition: service_started
     ports:
-      - "38081:8081"
+      - "32774:8081"
 
   frontend:
     build:
-      context: /root/.openclaw/worktree-bloop-frontend-integration
+      context: /root/.openclaw/workspace/bloop-frontend
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
@@ -65,7 +65,7 @@ services:
       control-plane:
         condition: service_started
     ports:
-      - "33000:3000"
+      - "32775:3000"
 
 volumes:
   pgdata:

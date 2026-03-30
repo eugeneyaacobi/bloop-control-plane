@@ -43,6 +43,9 @@ type Config struct {
 	WebAuthnRPID    string
 	WebAuthnRPName  string
 	WebAuthnOrigins []string
+
+	// CORS
+	CORSAllowedOrigins []string
 }
 
 func Load() (*Config, error) {
@@ -128,6 +131,13 @@ func Load() (*Config, error) {
 		webAuthnOrigins = strings.Split(webAuthnOriginsRaw, ",")
 	}
 
+	// CORS config
+	corsOriginsRaw := os.Getenv("CORS_ALLOWED_ORIGINS")
+	corsOrigins := []string{}
+	if corsOriginsRaw != "" {
+		corsOrigins = strings.Split(corsOriginsRaw, ",")
+	}
+
 	cfg := &Config{
 		ListenAddr:           os.Getenv("LISTEN_ADDR"),
 		DatabaseURL:          os.Getenv("DATABASE_URL"),
@@ -159,6 +169,8 @@ func Load() (*Config, error) {
 		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "bloop.to"),
 		WebAuthnRPName:  getenv("WEBAUTHN_RP_NAME", "Bloop"),
 		WebAuthnOrigins: webAuthnOrigins,
+		// CORS
+		CORSAllowedOrigins: corsOrigins,
 	}
 
 	if cfg.ListenAddr == "" {

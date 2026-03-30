@@ -2,10 +2,30 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 
 	"bloop-control-plane/internal/session"
 )
+
+// requestLogger logs each request with method, path, status, and duration.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+		slog.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", ww.Status(),
+			"duration_ms", time.Since(start).Milliseconds(),
+			"ip", r.RemoteAddr,
+		)
+	})
+}
 
 func requireSession(w http.ResponseWriter, r *http.Request) (session.Context, bool) {
 	sess, ok := session.FromContext(r.Context())
