@@ -28,6 +28,21 @@ type Config struct {
 	SessionCookieSecure  bool
 	SessionCookieDomain  string
 	RuntimeIngestSecret  string
+
+	// Auth & Token Management
+	PasswordMinLength       int
+	BreachCheckEnabled      bool
+	LoginRateLimitIP        int // per minute
+	LoginRateLimitAccount   int // per 15 minutes
+	AccountLockoutThreshold int // failed attempts
+	AccountLockoutDuration  time.Duration
+	APITokenDefaultExpiry   time.Duration
+	SessionRefreshWindow    time.Duration // time before expiry when refresh is allowed
+
+	// WebAuthn 2FA
+	WebAuthnRPID    string
+	WebAuthnRPName  string
+	WebAuthnOrigins []string
 }
 
 func Load() (*Config, error) {
@@ -62,6 +77,57 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid SESSION_TTL_SECONDS: %w", err)
 	}
 
+	// Auth config defaults
+	passwordMinLength, err := strconv.Atoi(getenv("PASSWORD_MIN_LENGTH", "12"))
+	if err != nil {
+		passwordMinLength = 12
+	}
+
+	breachCheckEnabled, err := getenvBool("BREACH_CHECK_ENABLED", false)
+	if err != nil {
+		breachCheckEnabled = false
+	}
+
+	loginRateLimitIP, err := strconv.Atoi(getenv("LOGIN_RATE_LIMIT_IP", "10"))
+	if err != nil {
+		loginRateLimitIP = 10
+	}
+
+	loginRateLimitAccount, err := strconv.Atoi(getenv("LOGIN_RATE_LIMIT_ACCOUNT", "5"))
+	if err != nil {
+		loginRateLimitAccount = 5
+	}
+
+	accountLockoutThreshold, err := strconv.Atoi(getenv("ACCOUNT_LOCKOUT_THRESHOLD", "20"))
+	if err != nil {
+		accountLockoutThreshold = 20
+	}
+
+	accountLockoutDurationRaw := getenv("ACCOUNT_LOCKOUT_DURATION", "1h")
+	accountLockoutDuration, err := time.ParseDuration(accountLockoutDurationRaw)
+	if err != nil {
+		accountLockoutDuration = time.Hour
+	}
+
+	apiTokenDefaultExpiryRaw := getenv("API_TOKEN_DEFAULT_EXPIRY", "720h")
+	apiTokenDefaultExpiry, err := time.ParseDuration(apiTokenDefaultExpiryRaw)
+	if err != nil {
+		apiTokenDefaultExpiry = 720 * time.Hour
+	}
+
+	sessionRefreshWindowRaw := getenv("SESSION_REFRESH_WINDOW", "168h")
+	sessionRefreshWindow, err := time.ParseDuration(sessionRefreshWindowRaw)
+	if err != nil {
+		sessionRefreshWindow = 168 * time.Hour
+	}
+
+	// WebAuthn config
+	webAuthnOriginsRaw := os.Getenv("WEBAUTHN_ORIGINS")
+	webAuthnOrigins := []string{}
+	if webAuthnOriginsRaw != "" {
+		webAuthnOrigins = strings.Split(webAuthnOriginsRaw, ",")
+	}
+
 	cfg := &Config{
 		ListenAddr:           os.Getenv("LISTEN_ADDR"),
 		DatabaseURL:          os.Getenv("DATABASE_URL"),
@@ -80,6 +146,19 @@ func Load() (*Config, error) {
 		SessionCookieSecure:  cookieSecure,
 		SessionCookieDomain:  os.Getenv("SESSION_COOKIE_DOMAIN"),
 		RuntimeIngestSecret:  os.Getenv("RUNTIME_INGEST_SECRET"),
+		// Auth config
+		PasswordMinLength:       passwordMinLength,
+		BreachCheckEnabled:      breachCheckEnabled,
+		LoginRateLimitIP:        loginRateLimitIP,
+		LoginRateLimitAccount:   loginRateLimitAccount,
+		AccountLockoutThreshold: accountLockoutThreshold,
+		AccountLockoutDuration:  accountLockoutDuration,
+		APITokenDefaultExpiry:   apiTokenDefaultExpiry,
+		SessionRefreshWindow:    sessionRefreshWindow,
+		// WebAuthn config
+		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "bloop.to"),
+		WebAuthnRPName:  getenv("WEBAUTHN_RP_NAME", "Bloop"),
+		WebAuthnOrigins: webAuthnOrigins,
 	}
 
 	if cfg.ListenAddr == "" {
