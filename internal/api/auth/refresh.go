@@ -54,13 +54,12 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Return new session context
+	// The refresh response won't have email/displayName since we only have the session context
 	writeJSON(w, http.StatusOK, models.RefreshResponse{
 		User: models.UserContext{
-			ID:          newSession.UserID,
-			Email:       "", // Not refreshed
-			DisplayName: "", // Not refreshed
-			AccountID:   newSession.AccountID,
-			Role:        newSession.Role,
+			ID:        newSession.UserID,
+			AccountID: newSession.AccountID,
+			Role:      newSession.Role,
 		},
 	})
 }

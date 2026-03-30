@@ -76,12 +76,28 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Return user context
-	// For login, we need to fetch the user to get the email/username
+	displayName := req.Email
+	if result.User != nil {
+		displayName = result.User.DisplayName
+	}
+	email := req.Email
+	if result.User != nil {
+		email = result.User.Email
+	}
+	username := ""
+	if result.User != nil && result.User.Username != nil {
+		username = *result.User.Username
+	}
+	var usernamePtr *string
+	if username != "" {
+		usernamePtr = &username
+	}
 	writeJSON(w, http.StatusOK, models.LoginResponse{
 		User: models.UserContext{
 			ID:          result.Session.UserID,
-			Email:       req.Email, // Use the email from the request
-			DisplayName: req.Email, // TODO: Get from user record
+			Email:       email,
+			Username:    usernamePtr,
+			DisplayName: displayName,
 			AccountID:   result.Session.AccountID,
 			Role:        result.Session.Role,
 		},

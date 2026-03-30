@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	authapi "bloop-control-plane/internal/api/auth"
@@ -21,7 +22,9 @@ import (
 	"bloop-control-plane/internal/service"
 	"bloop-control-plane/internal/session"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/cors"
 )
 
 type RouterDeps struct {
@@ -45,6 +48,37 @@ type RouterDeps struct {
 
 func NewRouter(deps RouterDeps) http.Handler {
 	r := chi.NewRouter()
+
+	// Global middleware
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.RealIP)
+	r.Use(requestLogger)
+
+	// CORS
+	if deps.Config != nil && len(deps.Config.CORSAllowedOrigins) > 0 {
+		corsHandler := cors.New(cors.Options{
+			AllowedOrigins:   deps.Config.CORSAllowedOrigins,
+			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+			AllowCredentials: true,
+			MaxAge:           300,
+		})
+		r.Use(corsHandler.Handler)
+	}
+
+	// Request metrics
+	var totalRequests atomic.Int64
+	var activeRequests atomic.Int64
+
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			totalRequests.Add(1)
+			activeRequests.Add(1)
+			defer activeRequests.Add(-1)
+			next.ServeHTTP(w, r)
+		})
+	})
+
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "service": "bloop-control-plane"})
@@ -57,6 +91,14 @@ func NewRouter(deps RouterDeps) http.Handler {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ready": true})
+	})
+	r.Get("/metricsz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total_requests":  totalRequests.Load(),
+			"active_requests": activeRequests.Load(),
+			"service":         "bloop-control-plane",
+		})
 	})
 
 	cfg := deps.Config

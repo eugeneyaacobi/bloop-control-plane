@@ -108,6 +108,7 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 
 // LoginResult holds the result of user login
 type LoginResult struct {
+	User             *repository.UserWithCredentials
 	Session          *session.Context
 	RequiresWebAuthn bool
 }
@@ -188,6 +189,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string, ipAddre
 	s.logAuditEvent(ctx, &user.ID, nil, "login_success", ipAddress, userAgent, true, map[string]interface{}{"webauthn_required": requiresWebAuthn})
 
 	return &LoginResult{
+		User:             user,
 		Session:          sessionCtx,
 		RequiresWebAuthn: requiresWebAuthn,
 	}, nil
