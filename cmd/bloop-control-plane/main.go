@@ -81,6 +81,7 @@ func main() {
 		lockoutRepo := repository.NewPostgresLockoutRepository(pool)
 		tokenRepo := repository.NewPostgresTokenRepository(pool)
 		webauthnRepo := repository.NewPostgresWebAuthnRepository(pool)
+		passwordResetRepo := repository.NewPostgresPasswordResetRepository(pool)
 
 		router := api.NewRouter(api.RouterDeps{
 			CustomerRepo:               customerRepo,
@@ -98,6 +99,7 @@ func main() {
 			LockoutRepo:                lockoutRepo,
 			TokenRepo:                  tokenRepo,
 			WebAuthnRepo:               webauthnRepo,
+			PasswordResetRepo:          passwordResetRepo,
 		})
 		logger.Info("control plane starting", "listen_addr", cfg.ListenAddr, "smtp_host", logging.Redact(cfg.SMTPHost), "prototype_mode", cfg.PrototypeMode, "dev_auth_fallback", cfg.AllowDevAuthFallback)
 		if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {

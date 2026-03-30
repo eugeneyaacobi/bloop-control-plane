@@ -42,8 +42,9 @@ type RouterDeps struct {
 	AuthRepo    repository.AuthRepository
 	AuditRepo   repository.AuditRepository
 	LockoutRepo repository.LockoutRepository
-	TokenRepo   repository.TokenRepository
-	WebAuthnRepo repository.WebAuthnRepository
+	TokenRepo          repository.TokenRepository
+	WebAuthnRepo       repository.WebAuthnRepository
+	PasswordResetRepo  repository.PasswordResetRepository
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -178,7 +179,12 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Auth routes (register, login, refresh)
 	if deps.AuthRepo != nil && deps.AuditRepo != nil && deps.LockoutRepo != nil && tokenManager != nil {
 		authService := service.NewAuthService(deps.AuthRepo, deps.AuditRepo, deps.LockoutRepo, cfg, tokenManager)
-		authHandler := authapi.NewHandler(authService, tokenManager, cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionCookieDomain)
+		emailSvc := service.NewEmailService(cfg)
+		var passwordResetService *service.PasswordResetService
+		if deps.PasswordResetRepo != nil {
+			passwordResetService = service.NewPasswordResetService(deps.PasswordResetRepo, deps.AuthRepo, deps.AuditRepo, emailSvc, cfg)
+		}
+		authHandler := authapi.NewHandler(authService, passwordResetService, tokenManager, cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionCookieDomain)
 		r.Route("/api/auth", func(sr chi.Router) {
 			authapi.Mount(sr, authHandler)
 		})

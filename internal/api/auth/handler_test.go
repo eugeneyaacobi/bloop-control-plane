@@ -379,7 +379,7 @@ func TestRegisterSuccess(t *testing.T) {
 	cfg := newTestConfig()
 	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","username":"testuser","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
@@ -426,7 +426,7 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 	hashedPassword, _ := security.HashPassword("Password123!")
 	authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "existinguser", hashedPassword, "Existing User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","username":"newuser","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
@@ -448,7 +448,7 @@ func TestRegisterWeakPassword(t *testing.T) {
 	cfg := newTestConfig()
 	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","username":"testuser","password":"short"}`
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
@@ -470,7 +470,7 @@ func TestRegisterMissingFields(t *testing.T) {
 	cfg := newTestConfig()
 	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	tests := []struct {
 		name string
@@ -498,7 +498,7 @@ func TestRegisterMissingFields(t *testing.T) {
 }
 
 func TestRegisterInvalidJSON(t *testing.T) {
-	h := NewHandler(nil, nil, "session", false, "")
+	h := NewHandler(nil, nil, nil, "session", false, "")
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader("{invalid"))
 	req.Header.Set("Content-Type", "application/json")
@@ -527,7 +527,7 @@ func TestLoginSuccess(t *testing.T) {
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
 	user, _ := authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "testuser", hashedPassword, "Test User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -570,7 +570,7 @@ func TestLoginWrongPassword(t *testing.T) {
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
 	authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "testuser", hashedPassword, "Test User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"WrongPassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -602,7 +602,7 @@ func TestLoginUserNotFound(t *testing.T) {
 	cfg := newTestConfig()
 	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"nonexistent@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -641,7 +641,7 @@ func TestLoginLockedAccount(t *testing.T) {
 	// Lock the account
 	lockoutRepo.LockAccount(context.Background(), user.ID, time.Now().Add(time.Hour), "test")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -677,7 +677,7 @@ func TestLoginRateLimited(t *testing.T) {
 		lockoutRepo.RecordLoginAttempt(context.Background(), "test@example.com", "192.168.1.1", false)
 	}
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -692,7 +692,7 @@ func TestLoginRateLimited(t *testing.T) {
 }
 
 func TestLoginMissingFields(t *testing.T) {
-	h := NewHandler(nil, nil, "session", false, "")
+	h := NewHandler(nil, nil, nil, "session", false, "")
 
 	tests := []struct {
 		name string
@@ -734,7 +734,7 @@ func TestRefreshSuccess(t *testing.T) {
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
 	user, _ := authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "testuser", hashedPassword, "Test User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	// Create session context
 	sess := session.Context{
@@ -763,7 +763,7 @@ func TestRefreshSuccess(t *testing.T) {
 }
 
 func TestRefreshNoSession(t *testing.T) {
-	h := NewHandler(nil, newTestTokenManager(), "session", false, "")
+	h := NewHandler(nil, nil, newTestTokenManager(), "session", false, "")
 
 	req := httptest.NewRequest(http.MethodPost, "/refresh", nil)
 	w := httptest.NewRecorder()
@@ -776,7 +776,7 @@ func TestRefreshNoSession(t *testing.T) {
 }
 
 func TestRefreshUnauthenticatedSession(t *testing.T) {
-	h := NewHandler(nil, newTestTokenManager(), "session", false, "")
+	h := NewHandler(nil, nil, newTestTokenManager(), "session", false, "")
 
 	// Empty session context (not authenticated)
 	sess := session.Context{}
@@ -799,7 +799,7 @@ func TestRefreshUserNotFound(t *testing.T) {
 	cfg := newTestConfig()
 	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	// Session for non-existent user
 	sess := session.Context{
