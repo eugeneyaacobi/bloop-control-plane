@@ -28,6 +28,8 @@ type GlobalProjection struct {
 type Repository interface {
 	ProjectAccount(ctx context.Context, account models.Account, tunnels []models.Tunnel) (AccountProjection, error)
 	ProjectGlobal(ctx context.Context, tunnels []models.Tunnel, flags []models.ReviewFlag) (GlobalProjection, error)
+	VerifyInstallationToken(ctx context.Context, token string) (*models.RuntimeInstallationToken, error)
+	CreateIngestToken(ctx context.Context, installationID string) (string, error)
 }
 
 type StubRepository struct{}
@@ -84,6 +86,24 @@ func (r *StubRepository) ProjectGlobal(ctx context.Context, tunnels []models.Tun
 		}
 	}
 	return projection, nil
+}
+
+func (r *StubRepository) VerifyInstallationToken(ctx context.Context, token string) (*models.RuntimeInstallationToken, error) {
+	// Stub implementation - returns a valid token response
+	_ = ctx
+	_ = token
+	return &models.RuntimeInstallationToken{
+		ID:             "token_stub",
+		InstallationID: "install_stub",
+		Kind:           "enrollment",
+	}, nil
+}
+
+func (r *StubRepository) CreateIngestToken(ctx context.Context, installationID string) (string, error) {
+	// Stub implementation - returns a fake ingest token
+	_ = ctx
+	_ = installationID
+	return "ingest_token_stub_" + installationID, nil
 }
 
 func levelForStatus(status string) string {

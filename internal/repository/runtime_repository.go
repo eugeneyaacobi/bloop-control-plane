@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"bloop-control-plane/internal/models"
 	"bloop-control-plane/internal/runtime"
@@ -205,4 +206,22 @@ func severityLevel(severity string) string {
 	default:
 		return "info"
 	}
+}
+
+func (r *PostgresRuntimeRepository) CreateIngestToken(ctx context.Context, installationID string) (string, error) {
+	token := fmt.Sprintf("ingest_%s_%d", installationID, time.Now().UnixNano())
+	_, err := r.pool.Exec(ctx, `INSERT INTO runtime_ingest_tokens (installation_id, token, created_at) VALUES ($1, $2, NOW())`, installationID, token)
+	if err != nil {
+		return "", fmt.Errorf("create ingest token: %w", err)
+	}
+	return token, nil
+}
+
+func (r *PostgresRuntimeRepository) VerifyInstallationToken(ctx context.Context, token string) (*models.RuntimeInstallationToken, error) {
+	var rit models.RuntimeInstallationToken
+	err := r.pool.QueryRow(ctx, `SELECT id, installation_id, kind FROM runtime_installation_tokens WHERE token = $1 AND revoked_at IS NULL`, token).Scan(&rit.ID, &rit.InstallationID, &rit.Kind)
+	if err != nil {
+		return nil, fmt.Errorf("verify installation token: %w", err)
+	}
+	return &rit, nil
 }

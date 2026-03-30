@@ -21,14 +21,17 @@ type Membership struct {
 }
 
 type Tunnel struct {
-	ID       string `json:"id"`
-	Hostname string `json:"hostname"`
-	Target   string `json:"target"`
-	Access   string `json:"access"`
-	Status   string `json:"status"`
-	Region   string `json:"region,omitempty"`
-	Owner    string `json:"owner,omitempty"`
-	Risk     string `json:"risk,omitempty"`
+	ID        string    `json:"id"`
+	AccountID string    `json:"account_id"`
+	Hostname  string    `json:"hostname"`
+	Target    string    `json:"target"`
+	Access    string    `json:"access"`
+	Status    string    `json:"status"`
+	Region    string    `json:"region,omitempty"`
+	Owner     string    `json:"owner,omitempty"`
+	Risk      string    `json:"risk,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type ReviewFlag struct {
@@ -75,4 +78,83 @@ type RuntimeTunnelBinding struct {
 	Hostname          string    `json:"hostname"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
+// Tunnel management request/response types
+
+type TunnelCreateRequest struct {
+	ID        string `json:"id"`
+	Hostname  string `json:"hostname"`
+	Target    string `json:"target"`
+	Access    string `json:"access"`
+	BasicAuth *struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"basic_auth,omitempty"`
+	TokenEnv string `json:"token_env,omitempty"`
+}
+
+type TunnelUpdateRequest struct {
+	Hostname  *string `json:"hostname,omitempty"`
+	Target    *string `json:"target,omitempty"`
+	Access    *string `json:"access,omitempty"`
+	BasicAuth *struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"basic_auth,omitempty"`
+	TokenEnv *string `json:"token_env,omitempty"`
+}
+
+type TunnelValidationRequest struct {
+	Hostname string `json:"hostname"`
+	Target   string `json:"target"`
+	Access   string `json:"access"`
+	LocalPort *int  `json:"local_port,omitempty"`
+}
+
+type FieldError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+type TunnelValidationResponse struct {
+	Valid  bool         `json:"valid"`
+	Errors []FieldError `json:"errors,omitempty"`
+}
+
+type TunnelStatusResponse struct {
+	Status     string  `json:"status"`
+	ObservedAt *string `json:"observed_at,omitempty"`
+	Degraded   bool    `json:"degraded"`
+	Stale      bool    `json:"stale"`
+}
+
+type AccessModeInfo struct {
+	Mode        string `json:"mode"`
+	Description string `json:"description"`
+	Requires    []string `json:"requires,omitempty"`
+}
+
+type HostnamePattern struct {
+	Pattern        string `json:"pattern"`
+	Description    string `json:"description"`
+	Example        string `json:"example"`
+}
+
+type ConfigSchemaResponse struct {
+	AccessModes      []AccessModeInfo   `json:"access_modes"`
+	HostnamePatterns []HostnamePattern `json:"hostname_patterns"`
+	DefaultPorts     []int              `json:"default_ports"`
+	DefaultRelayURL  string             `json:"default_relay_url"`
+}
+
+type EnrollmentVerifyRequest struct {
+	Token string `json:"token"`
+}
+
+type EnrollmentVerifyResponse struct {
+	Valid        bool   `json:"valid"`
+	InstallationID string `json:"installation_id,omitempty"`
+	IngestToken    string `json:"ingest_token,omitempty"`
+	Error          string `json:"error,omitempty"`
 }

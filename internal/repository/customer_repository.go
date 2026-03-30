@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"bloop-control-plane/internal/models"
 )
@@ -22,6 +23,12 @@ type CustomerRepository interface {
 	GetTunnelByID(ctx context.Context, accountID, tunnelID string) (*models.Tunnel, error)
 	ListInstallations(ctx context.Context, accountID string) ([]models.RuntimeInstallation, error)
 	GetRuntimeOverlayByTunnel(ctx context.Context, accountID, tunnelID string) (*RuntimeOverlay, error)
+	// Tunnel CRUD methods
+	CreateTunnel(ctx context.Context, accountID string, tunnel models.Tunnel) (*models.Tunnel, error)
+	UpdateTunnel(ctx context.Context, accountID, tunnelID string, tunnel models.Tunnel) (*models.Tunnel, error)
+	DeleteTunnel(ctx context.Context, accountID, tunnelID string) error
+	GetTunnelByHostname(ctx context.Context, hostname string) (*models.Tunnel, error)
+	GetRuntimeStatusByTunnelID(ctx context.Context, accountID, tunnelID string) (status string, degraded bool, observedAt *time.Time, err error)
 }
 
 type InMemoryCustomerRepository struct {
