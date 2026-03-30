@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	authapi "bloop-control-plane/internal/api/auth"
 	adminapi "bloop-control-plane/internal/api/admin"
 	runtimeapi "bloop-control-plane/internal/api/runtime"
 	customerapi "bloop-control-plane/internal/api/customer"
@@ -32,6 +33,12 @@ type RouterDeps struct {
 	Config                     *config.Config
 	IsReady                    func() bool
 	DBPool                     *pgxpool.Pool
+	// Auth deps (optional — wire when available)
+	AuthRepo    repository.AuthRepository
+	AuditRepo   repository.AuditRepository
+	LockoutRepo repository.LockoutRepository
+	TokenRepo   repository.TokenRepository
+	WebAuthnRepo repository.WebAuthnRepository
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -123,6 +130,15 @@ func NewRouter(deps RouterDeps) http.Handler {
 		sr.Use(prototypeCustomer.Middleware)
 		onboardingapi.Mount(sr, onboardingHandler)
 	})
+
+	// Auth routes (register, login, refresh)
+	if deps.AuthRepo != nil && deps.AuditRepo != nil && deps.LockoutRepo != nil && tokenManager != nil {
+		authService := service.NewAuthService(deps.AuthRepo, deps.AuditRepo, deps.LockoutRepo, cfg, tokenManager)
+		authHandler := authapi.NewHandler(authService, tokenManager, cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionCookieDomain)
+		r.Route("/api/auth", func(sr chi.Router) {
+			authapi.Mount(sr, authHandler)
+		})
+	}
 
 	return r
 }

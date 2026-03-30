@@ -158,3 +158,154 @@ type EnrollmentVerifyResponse struct {
 	IngestToken    string `json:"ingest_token,omitempty"`
 	Error          string `json:"error,omitempty"`
 }
+
+// Auth, Token Management & WebAuthn 2FA Types
+
+// RegistrationRequest represents a user registration request
+type RegistrationRequest struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// LoginRequest represents a login request
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// LoginResponse represents a successful login response
+type LoginResponse struct {
+	User              UserContext `json:"user"`
+	RequiresWebAuthn  bool        `json:"requires_webauthn"`
+	WebAuthnChallenge *string     `json:"webauthn_challenge,omitempty"`
+}
+
+// UserContext represents user information in responses
+type UserContext struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	Username    *string `json:"username,omitempty"`
+	DisplayName string `json:"display_name"`
+	AccountID   string `json:"account_id"`
+	Role        string `json:"role"`
+}
+
+// RefreshRequest represents a session refresh request
+type RefreshRequest struct {
+	// No body needed - uses existing session cookie
+}
+
+// RefreshResponse represents a session refresh response
+type RefreshResponse struct {
+	User UserContext `json:"user"`
+}
+
+// AuthError represents an authentication error response
+type AuthError struct {
+	Error   string `json:"error"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// API Token Types
+
+// TokenCreateRequest represents a token creation request
+type TokenCreateRequest struct {
+	Name      string  `json:"name"`
+	AccountID string  `json:"account_id"`
+	ExpiresIn *string `json:"expires_in,omitempty"` // e.g., "720h"
+}
+
+// TokenCreateResponse represents the response after creating a token
+// The token value is only shown once
+type TokenCreateResponse struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Token       string     `json:"token"` // Only shown once at creation
+	TokenPrefix string     `json:"token_prefix"`
+	AccountID   string     `json:"account_id"`
+	ExpiresAt   *string    `json:"expires_at,omitempty"`
+	CreatedAt   string     `json:"created_at"`
+}
+
+// TokenListResponse represents a list of tokens
+// Token values are NEVER included in listings
+type TokenListResponse struct {
+	Tokens []TokenSummary `json:"tokens"`
+}
+
+// TokenSummary represents a token in listings (without the actual token value)
+type TokenSummary struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	TokenPrefix string     `json:"token_prefix"`
+	AccountID   string     `json:"account_id"`
+	ExpiresAt   *string    `json:"expires_at,omitempty"`
+	RevokedAt   *string    `json:"revoked_at,omitempty"`
+	LastUsedAt  *string    `json:"last_used_at,omitempty"`
+	CreatedAt   string     `json:"created_at"`
+}
+
+// TokenRefreshResponse represents the response after refreshing a token
+type TokenRefreshResponse struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Token       string  `json:"token"` // New token value, shown once
+	TokenPrefix string  `json:"token_prefix"`
+	ExpiresAt   *string `json:"expires_at,omitempty"`
+	CreatedAt   string  `json:"created_at"`
+}
+
+// WebAuthn Types
+
+// WebAuthnBeginRegistrationResponse represents the beginning of WebAuthn registration
+type WebAuthnBeginRegistrationResponse struct {
+	PublicKeyCredentialCreationOptions any `json:"publicKeyCredentialCreationOptions"`
+}
+
+// WebAuthnFinishRegistrationRequest represents the completion of WebAuthn registration
+type WebAuthnFinishRegistrationRequest struct {
+	Credential any `json:"credential"`
+}
+
+// WebAuthnFinishRegistrationResponse represents a completed WebAuthn registration
+type WebAuthnFinishRegistrationResponse struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	AddedAt     string    `json:"added_at"`
+}
+
+// WebAuthnBeginLoginRequest represents the beginning of WebAuthn login
+type WebAuthnBeginLoginRequest struct {
+	Email string `json:"email"`
+}
+
+// WebAuthnBeginLoginResponse represents the response for WebAuthn login begin
+type WebAuthnBeginLoginResponse struct {
+	PublicKeyCredentialRequestOptions any `json:"publicKeyCredentialRequestOptions"`
+}
+
+// WebAuthnFinishLoginRequest represents the completion of WebAuthn login
+type WebAuthnFinishLoginRequest struct {
+	Email      string `json:"email"`
+	Credential any    `json:"credential"`
+}
+
+// WebAuthnCredentialListResponse represents a list of WebAuthn credentials
+type WebAuthnCredentialListResponse struct {
+	Credentials []WebAuthnCredentialSummary `json:"credentials"`
+}
+
+// WebAuthnCredentialSummary represents a WebAuthn credential in listings
+type WebAuthnCredentialSummary struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	AddedAt     string     `json:"added_at"`
+	LastUsedAt  *string    `json:"last_used_at,omitempty"`
+}
+
+// WebAuthnEnabledResponse represents the WebAuthn enabled state
+type WebAuthnEnabledResponse struct {
+	Enabled bool `json:"enabled"`
+}
