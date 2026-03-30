@@ -28,6 +28,8 @@ type mockUser struct {
 	displayName     string
 	passwordHash    string
 	webAuthnEnabled bool
+	verifiedAt      *time.Time
+	role            string
 }
 
 // Mock repositories
@@ -60,6 +62,8 @@ func (r *mockAuthRepo) CreateUserWithCredentials(ctx context.Context, email, use
 		displayName:     displayName,
 		passwordHash:    passwordHash,
 		webAuthnEnabled: false,
+		verifiedAt:      &now,
+		role:            "customer",
 	}
 
 	r.users[userID] = user
@@ -73,6 +77,8 @@ func (r *mockAuthRepo) CreateUserWithCredentials(ctx context.Context, email, use
 		DisplayName:     displayName,
 		PasswordSet:     true,
 		WebAuthnEnabled: false,
+		VerifiedAt:      &now,
+		Role:            "customer",
 		Credential: &repository.UserCredential{
 			ID:                credID,
 			UserID:            userID,
@@ -96,6 +102,8 @@ func (r *mockAuthRepo) GetUserByEmail(ctx context.Context, email string) (*repos
 		DisplayName:     user.displayName,
 		PasswordSet:     user.passwordHash != "",
 		WebAuthnEnabled: user.webAuthnEnabled,
+		VerifiedAt:      user.verifiedAt,
+		Role:            user.role,
 		Credential: &repository.UserCredential{
 			UserID:       user.id,
 			PasswordHash: user.passwordHash,
@@ -115,6 +123,8 @@ func (r *mockAuthRepo) GetUserByUsername(ctx context.Context, username string) (
 		DisplayName:     user.displayName,
 		PasswordSet:     user.passwordHash != "",
 		WebAuthnEnabled: user.webAuthnEnabled,
+		VerifiedAt:      user.verifiedAt,
+		Role:            user.role,
 	}, nil
 }
 
@@ -130,6 +140,8 @@ func (r *mockAuthRepo) GetUserByID(ctx context.Context, userID string) (*reposit
 		DisplayName:     user.displayName,
 		PasswordSet:     user.passwordHash != "",
 		WebAuthnEnabled: user.webAuthnEnabled,
+		VerifiedAt:      user.verifiedAt,
+		Role:            user.role,
 		Credential: &repository.UserCredential{
 			UserID:       user.id,
 			PasswordHash: user.passwordHash,
@@ -178,6 +190,23 @@ func (r *mockAuthRepo) SetWebAuthnEnabled(ctx context.Context, userID string, en
 		user.webAuthnEnabled = enabled
 	}
 	return nil
+}
+
+func (r *mockAuthRepo) SetVerified(ctx context.Context, userID string) error {
+	user, exists := r.users[userID]
+	if exists {
+		now := time.Now()
+		user.verifiedAt = &now
+	}
+	return nil
+}
+
+func (r *mockAuthRepo) GetRoleByUserID(ctx context.Context, userID string) (string, error) {
+	user, exists := r.users[userID]
+	if exists && user.role != "" {
+		return user.role, nil
+	}
+	return "customer", nil
 }
 
 type mockLockoutRepo struct {
@@ -363,25 +392,25 @@ func TestRegisterSuccess(t *testing.T) {
 		t.Fatalf("expected status %d, got %d (body: %s)", http.StatusCreated, w.Code, w.Body.String())
 	}
 
-	var resp models.LoginResponse
+	var resp map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if resp.User.Email != "test@example.com" {
-		t.Fatalf("expected email test@example.com, got %s", resp.User.Email)
+	if resp["email"] != "test@example.com" {
+		t.Fatalf("expected email test@example.com, got %v", resp["email"])
 	}
 
-	// Check session cookie
+	if resp["verified"] != false {
+		t.Fatal("expected verified=false for new registration")
+	}
+
+	// No session cookie before email verification
 	cookies := w.Result().Cookies()
-	if len(cookies) == 0 {
-		t.Fatal("expected session cookie to be set")
-	}
-	if cookies[0].Name != "session" {
-		t.Fatalf("expected cookie name 'session', got %s", cookies[0].Name)
-	}
-	if !cookies[0].HttpOnly {
-		t.Fatal("expected cookie to be HttpOnly")
+	for _, c := range cookies {
+		if c.Name == "session" {
+			t.Fatal("expected no session cookie before email verification")
+		}
 	}
 }
 

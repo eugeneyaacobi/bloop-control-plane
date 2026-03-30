@@ -36,7 +36,6 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	// Register user
 	result, err := h.AuthService.Register(ctx, req.Email, req.Username, req.Password, ipAddress, userAgent)
 	if err != nil {
-		// Check error type for appropriate status code
 		var validationErr *service.ValidationError
 		var conflictErr *service.ConflictError
 		if errors.As(err, &validationErr) {
@@ -51,8 +50,19 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue session token
-	token, err := h.issueToken(result.User.ID, result.Session.AccountID, "customer")
+	// If session is nil, user needs to verify email first
+	if result.Session == nil {
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"message":   "registration successful — please check your email to verify your account",
+			"user_id":   result.User.ID,
+			"email":     result.User.Email,
+			"verified":  false,
+		})
+		return
+	}
+
+	// Issue session token (only if verification is not required)
+	token, err := h.issueToken(result.Session.UserID, result.Session.AccountID, result.Session.Role)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.AuthError{Error: "failed to create session"})
 		return
@@ -63,30 +73,22 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:     h.SessionName,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   0, // Session cookie
+		MaxAge:   0,
 		Secure:   h.SecureCookie,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		Domain:   h.CookieDomain,
 	})
 
-	// Return user context
 	writeJSON(w, http.StatusCreated, models.LoginResponse{
 		User: models.UserContext{
 			ID:          result.User.ID,
 			Email:       result.User.Email,
 			Username:    result.User.Username,
 			DisplayName: result.User.DisplayName,
-			AccountID:   "acct_default", // TODO: Get from user's actual account
-			Role:        "customer",
+			AccountID:   result.Session.AccountID,
+			Role:        result.Session.Role,
 		},
 		RequiresWebAuthn: false,
 	})
-}
-
-// writeJSON writes JSON response
-func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
 }
