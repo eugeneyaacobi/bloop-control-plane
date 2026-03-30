@@ -107,25 +107,58 @@ func TestAuthFlowIntegration(t *testing.T) {
 			t.Fatalf("register: expected status %d, got %d (body: %s)", http.StatusCreated, w.Code, w.Body.String())
 		}
 
-		var resp models.LoginResponse
+		var resp map[string]any
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode register response: %v", err)
 		}
 
-		if resp.User.Email != "test@example.com" {
-			t.Fatalf("expected email test@example.com, got %s", resp.User.Email)
+		if resp["email"] != "test@example.com" {
+			t.Fatalf("expected email test@example.com, got %v", resp["email"])
 		}
 
-		// Verify session cookie is set
+		if resp["verified"] != false {
+			t.Fatal("expected verified=false after registration")
+		}
+
+		// No session cookie until email is verified
 		cookies := w.Result().Cookies()
-		if len(cookies) == 0 {
-			t.Fatal("expected session cookie to be set")
+		for _, c := range cookies {
+			if c.Name == "session" {
+				t.Fatal("expected no session cookie before email verification")
+			}
 		}
 	})
 
-	// Step 2: Login with the registered user
+	// Step 2: Login should fail — email not verified
+	t.Run("login_unverified", func(t *testing.T) {
+		body := `{"email":"test@example.com","password":"SecurePassword123!"}`
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		authHandler.Login(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status %d for unverified user, got %d (body: %s)", http.StatusUnauthorized, w.Code, w.Body.String())
+		}
+	})
+
+	// Step 2b: Verify the user email (simulating email verification callback)
+	t.Run("verify_email", func(t *testing.T) {
+		ctx := context.Background()
+		// Get user and mark verified
+		user, _ := env.authRepo.GetUserByEmail(ctx, "test@example.com")
+		if user == nil {
+			t.Fatal("expected user to exist")
+		}
+		if err := env.authRepo.SetVerified(ctx, user.ID); err != nil {
+			t.Fatalf("failed to verify user: %v", err)
+		}
+	})
+
+	// Step 2c: Login should now succeed
 	var loginUserID string
-	t.Run("login", func(t *testing.T) {
+	t.Run("login_verified", func(t *testing.T) {
 		body := `{"email":"test@example.com","password":"SecurePassword123!"}`
 		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -275,6 +308,7 @@ func TestLoginWrongPassword(t *testing.T) {
 		t.Fatalf("failed to create user: %v", err)
 	}
 	_ = user
+	env.authRepo.SetVerified(ctx, user.ID)
 
 	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
 
@@ -359,6 +393,7 @@ func TestLoginLockedAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	env.authRepo.SetVerified(ctx, user.ID)
 
 	// Lock the account
 	lockedUntil := time.Now().Add(time.Hour)

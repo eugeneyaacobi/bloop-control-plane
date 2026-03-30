@@ -183,6 +183,14 @@ func (r *mockAuthRepo) SetWebAuthnEnabled(ctx context.Context, userID string, en
 	return nil
 }
 
+func (r *mockAuthRepo) SetVerified(ctx context.Context, userID string) error {
+	return nil
+}
+
+func (r *mockAuthRepo) GetRoleByUserID(ctx context.Context, userID string) (string, error) {
+	return "customer", nil
+}
+
 // Mock audit repository
 type mockAuditRepo struct {
 	events []repository.AuthAuditEvent

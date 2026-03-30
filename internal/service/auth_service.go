@@ -94,15 +94,14 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Issue session
-	sessionCtx := s.issueSession(user.ID, user.Email, username, "customer")
+	// Log successful registration (pending verification)
+	s.logAuditEvent(ctx, &user.ID, nil, "register_success_pending_verification", ipAddress, userAgent, true, nil)
 
-	// Log successful registration
-	s.logAuditEvent(ctx, &user.ID, nil, "register_success", ipAddress, userAgent, true, nil)
-
+	// Don't issue a session — user must verify email first
+	// The signup verification flow handles sending the email
 	return &RegisterResult{
 		User:    user,
-		Session: sessionCtx,
+		Session: nil, // No session until verified
 	}, nil
 }
 
@@ -172,9 +171,15 @@ func (s *AuthService) Login(ctx context.Context, email, password string, ipAddre
 		return nil, &LockoutError{LockedUntil: func() *time.Time { t := time.Now().UTC().Add(s.config.AccountLockoutDuration); return &t }()}
 	}
 
-	// Reset failed count on successful login
-	// Note: This is a simplification - in production you'd want to reset the counter
-	// The lockout repository should handle this
+	// Check email verification
+	if user.VerifiedAt == nil {
+		s.recordFailedLogin(ctx, email, ipAddress)
+		s.logAuditEvent(ctx, &user.ID, nil, "login_failed", ipAddress, userAgent, false, map[string]interface{}{"reason": "email_not_verified"})
+		return nil, &AuthError{Message: "please verify your email address before logging in"}
+	}
+
+	// Resolve role from memberships table
+	role, _ := s.authRepo.GetRoleByUserID(ctx, user.ID)
 
 	// Record successful login
 	_ = s.lockoutRepo.RecordLoginAttempt(ctx, email, ipAddress, true)
@@ -183,7 +188,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string, ipAddre
 	requiresWebAuthn := user.WebAuthnEnabled
 
 	// Issue session (partial if WebAuthn is required)
-	sessionCtx := s.issueSession(user.ID, user.Email, func() string { if user.Username != nil { return *user.Username } else { return "" } }(), "customer")
+	sessionCtx := s.issueSession(user.ID, user.Email, func() string { if user.Username != nil { return *user.Username } else { return "" } }(), role)
 
 	// Log successful login
 	s.logAuditEvent(ctx, &user.ID, nil, "login_success", ipAddress, userAgent, true, map[string]interface{}{"webauthn_required": requiresWebAuthn})

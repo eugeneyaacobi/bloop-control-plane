@@ -26,6 +26,8 @@ type UserWithCredentials struct {
 	DisplayName      string
 	PasswordSet      bool
 	WebAuthnEnabled  bool
+	VerifiedAt       *time.Time
+	Role             string
 	Credential       *UserCredential
 }
 
@@ -57,6 +59,12 @@ type AuthRepository interface {
 
 	// SetWebAuthnEnabled sets the webauthn_enabled flag on a user
 	SetWebAuthnEnabled(ctx context.Context, userID string, enabled bool) error
+
+	// SetVerified marks a user's email as verified
+	SetVerified(ctx context.Context, userID string) error
+
+	// GetRoleByUserID looks up the user's role from memberships (fallback to users.role)
+	GetRoleByUserID(ctx context.Context, userID string) (string, error)
 }
 
 // PostgresAuthRepository implements AuthRepository for PostgreSQL
@@ -127,9 +135,9 @@ func (r *PostgresAuthRepository) GetUserByEmail(ctx context.Context, email strin
 	var username *string
 
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, email, username, display_name, password_set, webauthn_enabled
+		SELECT id, email, username, display_name, password_set, webauthn_enabled, verified_at, COALESCE(role, 'customer')
 		FROM users WHERE email = $1
-	`, email).Scan(&user.ID, &user.Email, &username, &user.DisplayName, &user.PasswordSet, &user.WebAuthnEnabled)
+	`, email).Scan(&user.ID, &user.Email, &username, &user.DisplayName, &user.PasswordSet, &user.WebAuthnEnabled, &user.VerifiedAt, &user.Role)
 
 	if err != nil {
 		return nil, nil
@@ -154,9 +162,9 @@ func (r *PostgresAuthRepository) GetUserByUsername(ctx context.Context, username
 	var uname *string
 
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, email, username, display_name, password_set, webauthn_enabled
+		SELECT id, email, username, display_name, password_set, webauthn_enabled, verified_at, COALESCE(role, 'customer')
 		FROM users WHERE username = $1
-	`, username).Scan(&user.ID, &user.Email, &uname, &user.DisplayName, &user.PasswordSet, &user.WebAuthnEnabled)
+	`, username).Scan(&user.ID, &user.Email, &uname, &user.DisplayName, &user.PasswordSet, &user.WebAuthnEnabled, &user.VerifiedAt, &user.Role)
 
 	if err != nil {
 		return nil, nil
@@ -181,9 +189,9 @@ func (r *PostgresAuthRepository) GetUserByID(ctx context.Context, userID string)
 	var username *string
 
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, email, username, display_name, password_set, webauthn_enabled
+		SELECT id, email, username, display_name, password_set, webauthn_enabled, verified_at, COALESCE(role, 'customer')
 		FROM users WHERE id = $1
-	`, userID).Scan(&user.ID, &user.Email, &username, &user.DisplayName, &user.PasswordSet, &user.WebAuthnEnabled)
+	`, userID).Scan(&user.ID, &user.Email, &username, &user.DisplayName, &user.PasswordSet, &user.WebAuthnEnabled, &user.VerifiedAt, &user.Role)
 
 	if err != nil {
 		return nil, nil
@@ -249,6 +257,29 @@ func (r *PostgresAuthRepository) SetWebAuthnEnabled(ctx context.Context, userID 
 		UPDATE users SET webauthn_enabled = $2 WHERE id = $1
 	`, userID, enabled)
 	return err
+}
+
+// SetVerified marks a user's email as verified
+func (r *PostgresAuthRepository) SetVerified(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE users SET verified_at = NOW() WHERE id = $1
+	`, userID)
+	return err
+}
+
+// GetRoleByUserID looks up the user's role from memberships, falls back to users.role
+func (r *PostgresAuthRepository) GetRoleByUserID(ctx context.Context, userID string) (string, error) {
+	var role string
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(
+			(SELECT m.role FROM memberships m WHERE m.user_id = $1 LIMIT 1),
+			(SELECT COALESCE(u.role, 'customer') FROM users u WHERE u.id = $1)
+		)
+	`, userID).Scan(&role)
+	if err != nil {
+		return "customer", nil
+	}
+	return role, nil
 }
 
 // InMemoryAuthRepository is an in-memory implementation for testing
@@ -374,4 +405,32 @@ func (r *InMemoryAuthRepository) SetWebAuthnEnabled(ctx context.Context, userID 
 	user.WebAuthnEnabled = enabled
 	r.users[userID] = user // Update the map
 	return nil
+}
+
+// SetVerified marks a user's email as verified
+func (r *InMemoryAuthRepository) SetVerified(ctx context.Context, userID string) error {
+	user, exists := r.users[userID]
+	if !exists {
+		return nil
+	}
+	now := time.Now().UTC()
+	user.VerifiedAt = &now
+	r.users[userID] = user
+	// Also update the byEmail pointer
+	if r.byEmail[user.Email] != nil {
+		*r.byEmail[user.Email] = user
+	}
+	return nil
+}
+
+// GetRoleByUserID returns the user's role from memory
+func (r *InMemoryAuthRepository) GetRoleByUserID(ctx context.Context, userID string) (string, error) {
+	user, exists := r.users[userID]
+	if !exists {
+		return "customer", nil
+	}
+	if user.Role != "" {
+		return user.Role, nil
+	}
+	return "customer", nil
 }
