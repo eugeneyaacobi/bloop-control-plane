@@ -15,7 +15,7 @@ func (c Context) IsAuthenticated() bool {
 
 func (c Context) IsAdmin() bool {
 	switch c.Role {
-	case "admin", "operator":
+	case "admin", "operator", "owner":
 		return true
 	default:
 		return false
