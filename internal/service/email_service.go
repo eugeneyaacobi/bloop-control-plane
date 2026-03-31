@@ -105,7 +105,7 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, toEmail, rawT
 }
 
 func (s *EmailService) SendVerificationEmail(ctx context.Context, toEmail, token string) error {
-	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", s.cfg.PasswordResetBaseURL, token)
+	verifyURL := fmt.Sprintf("%s/signup/verify?token=%s", s.cfg.PasswordResetBaseURL, token)
 
 	email := hermes.Email{
 		Body: hermes.Body{
