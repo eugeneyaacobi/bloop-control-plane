@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"bloop-control-plane/internal/models"
+	"bloop-control-plane/internal/security"
 	"bloop-control-plane/internal/service"
 	"bloop-control-plane/internal/session"
 )
@@ -26,6 +27,18 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	// Validate required fields
 	if req.Email == "" || req.Username == "" || req.Password == "" {
 		writeJSON(w, http.StatusBadRequest, models.AuthError{Error: "email, username, and password are required"})
+		return
+	}
+
+	// Validate email format
+	if err := security.ValidateEmail(req.Email); err != nil {
+		writeJSON(w, http.StatusBadRequest, models.AuthError{Error: err.Error()})
+		return
+	}
+
+	// Validate username format
+	if err := security.ValidateUsername(req.Username); err != nil {
+		writeJSON(w, http.StatusBadRequest, models.AuthError{Error: err.Error()})
 		return
 	}
 

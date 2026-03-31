@@ -34,16 +34,18 @@ type mockUser struct {
 
 // Mock repositories
 type mockAuthRepo struct {
-	users      map[string]*mockUser
-	byEmail    map[string]*mockUser
-	byUsername map[string]*mockUser
+	users          map[string]*mockUser
+	byEmail        map[string]*mockUser
+	byUsername     map[string]*mockUser
+	passwordHistory map[string][]string // user_id -> password hashes
 }
 
 func newMockAuthRepo() *mockAuthRepo {
 	return &mockAuthRepo{
-		users:      make(map[string]*mockUser),
-		byEmail:    make(map[string]*mockUser),
-		byUsername: make(map[string]*mockUser),
+		users:          make(map[string]*mockUser),
+		byEmail:        make(map[string]*mockUser),
+		byUsername:     make(map[string]*mockUser),
+		passwordHistory: make(map[string][]string),
 	}
 }
 
@@ -163,6 +165,10 @@ func (r *mockAuthRepo) GetCredentialsByUserID(ctx context.Context, userID string
 func (r *mockAuthRepo) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
 	user, exists := r.users[userID]
 	if exists {
+		// Save old password to history
+		if user.passwordHash != "" {
+			_ = r.AddPasswordHistory(ctx, userID, user.passwordHash)
+		}
 		user.passwordHash = passwordHash
 	}
 	return nil
@@ -207,6 +213,36 @@ func (r *mockAuthRepo) GetRoleByUserID(ctx context.Context, userID string) (stri
 		return user.role, nil
 	}
 	return "customer", nil
+}
+
+func (r *mockAuthRepo) GetPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	history, exists := r.passwordHistory[userID]
+	if !exists {
+		return []string{}, nil
+	}
+	if len(history) <= limit {
+		result := make([]string, len(history))
+		for i, h := range history {
+			result[len(history)-1-i] = h
+		}
+		return result, nil
+	}
+	result := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		result[i] = history[len(history)-1-i]
+	}
+	return result, nil
+}
+
+func (r *mockAuthRepo) AddPasswordHistory(ctx context.Context, userID, passwordHash string) error {
+	if r.passwordHistory[userID] == nil {
+		r.passwordHistory[userID] = []string{}
+	}
+	r.passwordHistory[userID] = append(r.passwordHistory[userID], passwordHash)
+	if len(r.passwordHistory[userID]) > 10 {
+		r.passwordHistory[userID] = r.passwordHistory[userID][len(r.passwordHistory[userID])-10:]
+	}
+	return nil
 }
 
 type mockLockoutRepo struct {
@@ -377,9 +413,9 @@ func TestRegisterSuccess(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","username":"testuser","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
@@ -420,13 +456,13 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Pre-create user
 	hashedPassword, _ := security.HashPassword("Password123!")
 	authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "existinguser", hashedPassword, "Existing User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","username":"newuser","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
@@ -446,9 +482,9 @@ func TestRegisterWeakPassword(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","username":"testuser","password":"short"}`
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
@@ -468,9 +504,9 @@ func TestRegisterMissingFields(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	tests := []struct {
 		name string
@@ -498,7 +534,7 @@ func TestRegisterMissingFields(t *testing.T) {
 }
 
 func TestRegisterInvalidJSON(t *testing.T) {
-	h := NewHandler(nil, nil, "session", false, "")
+	h := NewHandler(nil, nil, nil, "session", false, "")
 
 	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader("{invalid"))
 	req.Header.Set("Content-Type", "application/json")
@@ -521,13 +557,13 @@ func TestLoginSuccess(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user with known password
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
 	user, _ := authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "testuser", hashedPassword, "Test User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -564,13 +600,13 @@ func TestLoginWrongPassword(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user with known password
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
 	authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "testuser", hashedPassword, "Test User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"WrongPassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -600,9 +636,9 @@ func TestLoginUserNotFound(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"nonexistent@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -632,7 +668,7 @@ func TestLoginLockedAccount(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user with known password
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
@@ -641,7 +677,7 @@ func TestLoginLockedAccount(t *testing.T) {
 	// Lock the account
 	lockoutRepo.LockAccount(context.Background(), user.ID, time.Now().Add(time.Hour), "test")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -666,7 +702,7 @@ func TestLoginRateLimited(t *testing.T) {
 		AccountLockoutThreshold: 20,
 		AccountLockoutDuration:  time.Hour,
 	}
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
@@ -677,7 +713,7 @@ func TestLoginRateLimited(t *testing.T) {
 		lockoutRepo.RecordLoginAttempt(context.Background(), "test@example.com", "192.168.1.1", false)
 	}
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	body := `{"email":"test@example.com","password":"SecurePassword123!"}`
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(body))
@@ -692,7 +728,7 @@ func TestLoginRateLimited(t *testing.T) {
 }
 
 func TestLoginMissingFields(t *testing.T) {
-	h := NewHandler(nil, nil, "session", false, "")
+	h := NewHandler(nil, nil, nil, "session", false, "")
 
 	tests := []struct {
 		name string
@@ -728,13 +764,13 @@ func TestRefreshSuccess(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
 	user, _ := authRepo.CreateUserWithCredentials(context.Background(), "test@example.com", "testuser", hashedPassword, "Test User")
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	// Create session context
 	sess := session.Context{
@@ -763,7 +799,7 @@ func TestRefreshSuccess(t *testing.T) {
 }
 
 func TestRefreshNoSession(t *testing.T) {
-	h := NewHandler(nil, newTestTokenManager(), "session", false, "")
+	h := NewHandler(nil, nil, newTestTokenManager(), "session", false, "")
 
 	req := httptest.NewRequest(http.MethodPost, "/refresh", nil)
 	w := httptest.NewRecorder()
@@ -776,7 +812,7 @@ func TestRefreshNoSession(t *testing.T) {
 }
 
 func TestRefreshUnauthenticatedSession(t *testing.T) {
-	h := NewHandler(nil, newTestTokenManager(), "session", false, "")
+	h := NewHandler(nil, nil, newTestTokenManager(), "session", false, "")
 
 	// Empty session context (not authenticated)
 	sess := session.Context{}
@@ -797,9 +833,9 @@ func TestRefreshUserNotFound(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
-	h := NewHandler(authService, tokenMgr, "session", false, "")
+	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
 	// Session for non-existent user
 	sess := session.Context{

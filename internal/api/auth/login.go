@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"bloop-control-plane/internal/models"
+	"bloop-control-plane/internal/security"
 	"bloop-control-plane/internal/service"
 	"bloop-control-plane/internal/session"
 )
@@ -26,6 +27,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	// Validate required fields
 	if req.Email == "" || req.Password == "" {
 		writeJSON(w, http.StatusBadRequest, models.AuthError{Error: "email and password are required"})
+		return
+	}
+
+	// Validate email format
+	if err := security.ValidateEmail(req.Email); err != nil {
+		writeJSON(w, http.StatusBadRequest, models.AuthError{Error: err.Error()})
 		return
 	}
 

@@ -44,6 +44,12 @@ type Config struct {
 	WebAuthnRPName  string
 	WebAuthnOrigins []string
 
+	// Password Reset
+	PasswordResetTokenTTL       time.Duration
+	PasswordResetRateLimitEmail  int
+	PasswordResetRateLimitIP     int
+	PasswordResetBaseURL         string
+
 	// CORS
 	CORSAllowedOrigins []string
 }
@@ -169,6 +175,11 @@ func Load() (*Config, error) {
 		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "bloop.to"),
 		WebAuthnRPName:  getenv("WEBAUTHN_RP_NAME", "Bloop"),
 		WebAuthnOrigins: webAuthnOrigins,
+		// Password Reset
+		PasswordResetTokenTTL:       parseDurationEnv("PASSWORD_RESET_TOKEN_TTL", "15m"),
+		PasswordResetRateLimitEmail:  atoiEnv("PASSWORD_RESET_RATE_LIMIT_EMAIL", 5),
+		PasswordResetRateLimitIP:     atoiEnv("PASSWORD_RESET_RATE_LIMIT_IP", 20),
+		PasswordResetBaseURL:         getenv("PASSWORD_RESET_BASE_URL", "https://console.bloop.to"),
 		// CORS
 		CORSAllowedOrigins: corsOrigins,
 	}
@@ -199,4 +210,25 @@ func getenvBool(key string, fallback bool) (bool, error) {
 		return false, err
 	}
 	return value, nil
+}
+
+func parseDurationEnv(key, fallback string) time.Duration {
+	raw := getenv(key, fallback)
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		d, _ = time.ParseDuration(fallback)
+	}
+	return d
+}
+
+func atoiEnv(key string, fallback int) int {
+	raw := getenv(key, "")
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return v
 }

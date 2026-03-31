@@ -18,6 +18,7 @@ type AuthService struct {
 	lockoutRepo repository.LockoutRepository
 	config      *config.Config
 	tokenMgr    *session.TokenManager
+	emailSvc    VerificationEmailSender
 }
 
 // NewAuthService creates a new authentication service
@@ -27,6 +28,7 @@ func NewAuthService(
 	lockoutRepo repository.LockoutRepository,
 	config *config.Config,
 	tokenMgr *session.TokenManager,
+	emailSvc VerificationEmailSender,
 ) *AuthService {
 	return &AuthService{
 		authRepo:    authRepo,
@@ -34,6 +36,7 @@ func NewAuthService(
 		lockoutRepo: lockoutRepo,
 		config:      config,
 		tokenMgr:    tokenMgr,
+		emailSvc:    emailSvc,
 	}
 }
 
@@ -96,6 +99,14 @@ func (s *AuthService) Register(ctx context.Context, email, username, password st
 
 	// Log successful registration (pending verification)
 	s.logAuditEvent(ctx, &user.ID, nil, "register_success_pending_verification", ipAddress, userAgent, true, nil)
+
+	// Send verification email
+	if s.emailSvc != nil {
+		token, err := security.NewVerificationToken(s.config.VerificationTokenTTL, time.Now().UTC())
+		if err == nil {
+			_ = s.emailSvc.SendVerificationEmail(ctx, email, token.Raw)
+		}
+	}
 
 	// Don't issue a session — user must verify email first
 	// The signup verification flow handles sending the email

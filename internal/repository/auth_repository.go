@@ -65,6 +65,12 @@ type AuthRepository interface {
 
 	// GetRoleByUserID looks up the user's role from memberships (fallback to users.role)
 	GetRoleByUserID(ctx context.Context, userID string) (string, error)
+
+	// GetPasswordHistory retrieves the last N password hashes for a user
+	GetPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error)
+
+	// AddPasswordHistory adds a password hash to the user's history
+	AddPasswordHistory(ctx context.Context, userID, passwordHash string) error
 }
 
 // PostgresAuthRepository implements AuthRepository for PostgreSQL
@@ -226,8 +232,23 @@ func (r *PostgresAuthRepository) GetCredentialsByUserID(ctx context.Context, use
 }
 
 // UpdatePasswordHash updates a user's password hash
+// It saves the old password to history before updating
 func (r *PostgresAuthRepository) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
-	_, err := r.pool.Exec(ctx, `
+	// Get the current password hash
+	var oldHash string
+	err := r.pool.QueryRow(ctx, `
+		SELECT password_hash FROM user_credentials WHERE user_id = $1
+	`, userID).Scan(&oldHash)
+	if err == nil && oldHash != "" {
+		// Save old password to history
+		_, _ = r.pool.Exec(ctx, `
+			INSERT INTO password_history (user_id, password_hash)
+			VALUES ($1, $2)
+		`, userID, oldHash)
+	}
+
+	// Update to new password
+	_, err = r.pool.Exec(ctx, `
 		UPDATE user_credentials
 		SET password_hash = $2, updated_at = NOW()
 		WHERE user_id = $1
@@ -282,19 +303,55 @@ func (r *PostgresAuthRepository) GetRoleByUserID(ctx context.Context, userID str
 	return role, nil
 }
 
+// GetPasswordHistory retrieves the last N password hashes for a user
+func (r *PostgresAuthRepository) GetPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT password_hash
+		FROM password_history
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2
+	`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var hashes []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		hashes = append(hashes, hash)
+	}
+	return hashes, rows.Err()
+}
+
+// AddPasswordHistory adds a password hash to the user's history
+func (r *PostgresAuthRepository) AddPasswordHistory(ctx context.Context, userID, passwordHash string) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO password_history (user_id, password_hash)
+		VALUES ($1, $2)
+	`, userID, passwordHash)
+	return err
+}
+
 // InMemoryAuthRepository is an in-memory implementation for testing
 type InMemoryAuthRepository struct {
-	users       map[string]UserWithCredentials
-	byEmail     map[string]*UserWithCredentials
-	byUsername  map[string]*UserWithCredentials
+	users          map[string]UserWithCredentials
+	byEmail        map[string]*UserWithCredentials
+	byUsername     map[string]*UserWithCredentials
+	passwordHistory map[string][]string // user_id -> password hashes (oldest to newest)
 }
 
 // NewInMemoryAuthRepository creates a new in-memory auth repository
 func NewInMemoryAuthRepository() *InMemoryAuthRepository {
 	return &InMemoryAuthRepository{
-		users:      make(map[string]UserWithCredentials),
-		byEmail:    make(map[string]*UserWithCredentials),
-		byUsername: make(map[string]*UserWithCredentials),
+		users:          make(map[string]UserWithCredentials),
+		byEmail:        make(map[string]*UserWithCredentials),
+		byUsername:     make(map[string]*UserWithCredentials),
+		passwordHistory: make(map[string][]string),
 	}
 }
 
@@ -357,14 +414,20 @@ func (r *InMemoryAuthRepository) GetCredentialsByUserID(ctx context.Context, use
 }
 
 // UpdatePasswordHash updates a user's password hash
+// It saves the old password to history before updating
 func (r *InMemoryAuthRepository) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
 	user, exists := r.users[userID]
 	if !exists {
 		return nil
 	}
 	if user.Credential != nil {
+		// Save old password to history
+		_ = r.AddPasswordHistory(ctx, userID, user.Credential.PasswordHash)
+		// Update to new password
 		user.Credential.PasswordHash = passwordHash
 		user.Credential.UpdatedAt = time.Now().UTC()
+		// Update the stored user
+		r.users[userID] = user
 	}
 	return nil
 }
@@ -433,4 +496,40 @@ func (r *InMemoryAuthRepository) GetRoleByUserID(ctx context.Context, userID str
 		return user.Role, nil
 	}
 	return "customer", nil
+}
+
+// GetPasswordHistory retrieves the last N password hashes for a user from memory
+func (r *InMemoryAuthRepository) GetPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	history, exists := r.passwordHistory[userID]
+	if !exists {
+		return []string{}, nil
+	}
+	// Return the last N entries (most recent first)
+	if len(history) <= limit {
+		// Return a copy in reverse order (newest first)
+		result := make([]string, len(history))
+		for i, h := range history {
+			result[len(history)-1-i] = h
+		}
+		return result, nil
+	}
+	// Return only the last N entries in reverse order
+	result := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		result[i] = history[len(history)-1-i]
+	}
+	return result, nil
+}
+
+// AddPasswordHistory adds a password hash to the user's history in memory
+func (r *InMemoryAuthRepository) AddPasswordHistory(ctx context.Context, userID, passwordHash string) error {
+	if r.passwordHistory[userID] == nil {
+		r.passwordHistory[userID] = []string{}
+	}
+	r.passwordHistory[userID] = append(r.passwordHistory[userID], passwordHash)
+	// Keep only the last 10
+	if len(r.passwordHistory[userID]) > 10 {
+		r.passwordHistory[userID] = r.passwordHistory[userID][len(r.passwordHistory[userID])-10:]
+	}
+	return nil
 }

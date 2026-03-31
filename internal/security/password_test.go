@@ -216,12 +216,12 @@ func TestValidatePassword(t *testing.T) {
 	}{
 		{
 			name:     "valid password",
-			password: strings.Repeat("a", minPasswordLen),
+			password: "ValidPassword123",
 			wantErr:  false,
 		},
 		{
 			name:     "too short",
-			password: strings.Repeat("a", minPasswordLen-1),
+			password: "Short1A",
 			wantErr:  true,
 		},
 		{
@@ -231,8 +231,23 @@ func TestValidatePassword(t *testing.T) {
 		},
 		{
 			name:     "long password",
-			password: strings.Repeat("a", 100),
+			password: "ThisIsAVeryLongPassword123ThatShouldBeValid",
 			wantErr:  false,
+		},
+		{
+			name:     "missing uppercase",
+			password: "lowercase123",
+			wantErr:  true,
+		},
+		{
+			name:     "missing lowercase",
+			password: "UPPERCASE123",
+			wantErr:  true,
+		},
+		{
+			name:     "missing digit",
+			password: "NoDigitsHere",
+			wantErr:  true,
 		},
 	}
 

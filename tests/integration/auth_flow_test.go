@@ -59,7 +59,8 @@ func newTestEnv(t *testing.T) *testEnv {
 		SessionTTL:              24 * time.Hour,
 	}
 
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenManager)
+	emailSvc := service.NewEmailService(cfg)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenManager, emailSvc)
 	tokenService := service.NewTokenService(tokenRepo, auditRepo, cfg)
 
 	return &testEnv{
@@ -91,7 +92,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 	env := newTestEnv(t)
 
 	// Create handlers
-	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
+	authHandler := authapi.NewHandler(env.authService, nil, env.tokenManager, "session", false, "")
 	tokenHandler := tokens.NewHandler(env.tokenService)
 
 	// Step 1: Register a new user
@@ -310,7 +311,7 @@ func TestLoginWrongPassword(t *testing.T) {
 	_ = user
 	env.authRepo.SetVerified(ctx, user.ID)
 
-	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
+	authHandler := authapi.NewHandler(env.authService, nil, env.tokenManager, "session", false, "")
 
 	// Try to login with wrong password
 	body := `{"email":"test@example.com","password":"WrongPassword123!"}`
@@ -337,7 +338,7 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 		t.Fatalf("failed to create user: %v", err)
 	}
 
-	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
+	authHandler := authapi.NewHandler(env.authService, nil, env.tokenManager, "session", false, "")
 
 	// Try to register with same email
 	body := `{"email":"test@example.com","username":"testuser2","password":"Password123!"}`
@@ -355,7 +356,7 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 // Test: Missing fields in registration
 func TestRegisterMissingFields(t *testing.T) {
 	env := newTestEnv(t)
-	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
+	authHandler := authapi.NewHandler(env.authService, nil, env.tokenManager, "session", false, "")
 
 	tests := []struct {
 		name string
@@ -399,7 +400,7 @@ func TestLoginLockedAccount(t *testing.T) {
 	lockedUntil := time.Now().Add(time.Hour)
 	env.lockoutRepo.LockAccount(ctx, user.ID, lockedUntil, "test")
 
-	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
+	authHandler := authapi.NewHandler(env.authService, nil, env.tokenManager, "session", false, "")
 
 	// Try to login
 	body := `{"email":"test@example.com","password":"Password123!"}`
@@ -417,7 +418,7 @@ func TestLoginLockedAccount(t *testing.T) {
 // Test: Refresh without session fails
 func TestRefreshWithoutSession(t *testing.T) {
 	env := newTestEnv(t)
-	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
+	authHandler := authapi.NewHandler(env.authService, nil, env.tokenManager, "session", false, "")
 
 	req := httptest.NewRequest(http.MethodPost, "/refresh", nil)
 	w := httptest.NewRecorder()
@@ -506,7 +507,7 @@ func TestTokenOwnershipEnforcement(t *testing.T) {
 // Test: Invalid JSON handling
 func TestInvalidJSONHandling(t *testing.T) {
 	env := newTestEnv(t)
-	authHandler := authapi.NewHandler(env.authService, env.tokenManager, "session", false, "")
+	authHandler := authapi.NewHandler(env.authService, nil, env.tokenManager, "session", false, "")
 
 	tests := []struct {
 		name   string

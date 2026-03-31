@@ -13,25 +13,29 @@ func Mount(r chi.Router, handler *Handler) {
 	r.Post("/register", handler.Register)
 	r.Post("/login", handler.Login)
 	r.Post("/refresh", handler.Refresh)
+	r.Post("/forgot-password", handler.ForgotPassword)
+	r.Post("/reset-password", handler.ResetPassword)
 }
 
 // Handler dependencies
 type Handler struct {
-	AuthService  *service.AuthService
-	TokenManager *session.TokenManager
-	SessionName  string
-	SecureCookie bool
-	CookieDomain string
+	AuthService          *service.AuthService
+	PasswordResetService *service.PasswordResetService
+	TokenManager         *session.TokenManager
+	SessionName          string
+	SecureCookie         bool
+	CookieDomain         string
 }
 
 // NewHandler creates a new auth handler
-func NewHandler(authService *service.AuthService, tokenMgr *session.TokenManager, sessionName string, secureCookie bool, cookieDomain string) *Handler {
+func NewHandler(authService *service.AuthService, passwordResetService *service.PasswordResetService, tokenMgr *session.TokenManager, sessionName string, secureCookie bool, cookieDomain string) *Handler {
 	return &Handler{
-		AuthService:  authService,
-		TokenManager: tokenMgr,
-		SessionName:  sessionName,
-		SecureCookie: secureCookie,
-		CookieDomain: cookieDomain,
+		AuthService:          authService,
+		PasswordResetService: passwordResetService,
+		TokenManager:         tokenMgr,
+		SessionName:          sessionName,
+		SecureCookie:         secureCookie,
+		CookieDomain:         cookieDomain,
 	}
 }
 

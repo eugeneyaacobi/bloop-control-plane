@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -22,6 +23,13 @@ const (
 	argonSaltLen   = 16
 	algorithmName  = "argon2id"
 	minPasswordLen = 12
+)
+
+// Compiled once at package level for password complexity checks.
+var (
+	hasUpper = regexp.MustCompile(`[A-Z]`)
+	hasLower = regexp.MustCompile(`[a-z]`)
+	hasDigit = regexp.MustCompile(`[0-9]`)
 )
 
 var hibpAPIURL = "https://api.pwnedpasswords.com/range/"
@@ -155,10 +163,20 @@ func CheckPasswordBreach(password string) (bool, error) {
 	return false, nil
 }
 
-// ValidatePassword validates a password meets minimum requirements
+// ValidatePassword validates a password meets minimum requirements:
+// at least 12 characters, with at least one uppercase, one lowercase, and one digit.
 func ValidatePassword(password string) error {
 	if len(password) < minPasswordLen {
 		return fmt.Errorf("password must be at least %d characters", minPasswordLen)
+	}
+	if !hasUpper.MatchString(password) {
+		return fmt.Errorf("password must contain at least one uppercase letter")
+	}
+	if !hasLower.MatchString(password) {
+		return fmt.Errorf("password must contain at least one lowercase letter")
+	}
+	if !hasDigit.MatchString(password) {
+		return fmt.Errorf("password must contain at least one digit")
 	}
 	return nil
 }
