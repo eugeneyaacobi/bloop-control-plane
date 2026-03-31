@@ -119,6 +119,17 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, rawToken, newP
 		}
 	}
 
+	// Check password history - prevent reuse of last 5 passwords
+	history, err := s.authRepo.GetPasswordHistory(ctx, token.UserID, 5)
+	if err == nil && len(history) > 0 {
+		for _, oldHash := range history {
+			if match, _ := security.VerifyPassword(newPassword, oldHash); match {
+				s.auditLog(ctx, &token.UserID, "password_reset_failed", ipAddress, userAgent, false, map[string]interface{}{"reason": "password_reuse"})
+				return &ValidationError{Field: "password", Message: "cannot reuse your recent passwords"}
+			}
+		}
+	}
+
 	// Hash new password
 	hash, err := security.HashPassword(newPassword)
 	if err != nil {
@@ -130,6 +141,14 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, rawToken, newP
 	if err := s.authRepo.UpdatePasswordHash(ctx, token.UserID, hash); err != nil {
 		s.auditLog(ctx, &token.UserID, "password_reset_failed", ipAddress, userAgent, false, map[string]interface{}{"reason": "db_error"})
 		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	// Auto-verify email on password reset — if they received the reset email,
+	// they own the address. This prevents the UX trap of resetting a password
+	// on an unverified account and still being unable to log in.
+	if err := s.authRepo.SetVerified(ctx, token.UserID); err != nil {
+		// Log but don't fail — password was updated successfully
+		s.auditLog(ctx, &token.UserID, "password_reset_auto_verify_failed", ipAddress, userAgent, false, map[string]interface{}{"reason": "db_error"})
 	}
 
 	// Mark token as used

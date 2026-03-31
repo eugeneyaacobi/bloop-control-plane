@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"bloop-control-plane/internal/security"
 	"bloop-control-plane/internal/service"
 	"bloop-control-plane/internal/session"
 )
@@ -26,6 +27,15 @@ func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	if req.Email == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email is required"})
+		return
+	}
+
+	// Validate email format
+	if err := security.ValidateEmail(req.Email); err != nil {
+		// Don't reveal validation details — return generic message
+		writeJSON(w, http.StatusOK, map[string]string{
+			"message": "If an account with that email exists, a reset link has been sent.",
+		})
 		return
 	}
 

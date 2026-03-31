@@ -59,7 +59,8 @@ func newTestEnv(t *testing.T) *testEnv {
 		SessionTTL:              24 * time.Hour,
 	}
 
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenManager)
+	emailSvc := service.NewEmailService(cfg)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenManager, emailSvc)
 	tokenService := service.NewTokenService(tokenRepo, auditRepo, cfg)
 
 	return &testEnv{

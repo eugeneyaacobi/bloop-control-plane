@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -54,6 +55,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger)
+	r.Use(securityHeaders)
 
 	// CORS
 	if deps.Config != nil && len(deps.Config.CORSAllowedOrigins) > 0 {
@@ -65,6 +67,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 			MaxAge:           300,
 		})
 		r.Use(corsHandler.Handler)
+	} else {
+		// Reject cross-origin requests when CORS is not explicitly configured
+		r.Use(rejectCrossOrigin)
 	}
 
 	// Request metrics
@@ -131,6 +136,12 @@ func NewRouter(deps RouterDeps) http.Handler {
 	sessionHandler := &sessionapi.Handler{Service: service.NewSessionService(deps.SessionRepo), CookieName: cfg.SessionCookieName, CookieSecure: cfg.SessionCookieSecure, CookieDomain: cfg.SessionCookieDomain}
 
 	prototypeAccountID := "acct_default"
+	if cfg.AllowDevAuthFallback {
+		log.Println("[WARN] AllowDevAuthFallback is enabled — prototype auth bypass is active. This should be false in production.")
+	}
+	if cfg.PrototypeMode {
+		log.Println("[WARN] PrototypeMode is enabled. This should be false in production.")
+	}
 	prototypeCustomer := session.Resolver{
 		PrototypeAccountID: prototypeAccountID,
 		PrototypeUserID:    "user_gene",
@@ -213,4 +224,25 @@ func NewRouter(deps RouterDeps) http.Handler {
 	}
 
 	return r
+}
+
+// securityHeaders adds standard security headers to every response.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rejectCrossOrigin rejects requests with an Origin header when CORS is not configured.
+func rejectCrossOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" {
+			http.Error(w, "cross-origin requests are not allowed", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

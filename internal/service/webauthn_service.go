@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"bloop-control-plane/internal/models"
 	"bloop-control-plane/internal/repository"
 	"bloop-control-plane/internal/security"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 )
@@ -171,24 +174,49 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, userID, challe
 		)
 	}
 
-	// In a real implementation, you would parse the response and verify it
-	// For now, this is a placeholder that simulates successful registration
-	// The actual implementation would use:
-	// credential, err := s.webAuthn.FinishRegistration(wuser, sessionData, response)
+	// Create WebAuthn user
+	wuser := security.WebAuthnUser{
+		ID:          user.ID,
+		DisplayName: func() string { if user.Username != nil { return *user.Username } else { return user.Email } }(),
+		Credentials: webauthnCreds,
+	}
 
-	// Create credential record (placeholder - would be extracted from response)
+	// Reconstruct session data from stored challenge
+	sessionData := webauthn.SessionData{
+		Challenge: string(challenge.Challenge),
+	}
+
+	// Parse the credential response from JSON
+	var credentialResponse protocol.ParsedCredentialCreationData
+	if err := json.Unmarshal([]byte(response), &credentialResponse); err != nil {
+		return nil, fmt.Errorf("invalid credential response: %w", err)
+	}
+
+	// Finish registration using the WebAuthn library
+	credential, err := s.webAuthn.CreateCredential(wuser, sessionData, &credentialResponse)
+	if err != nil {
+		return nil, fmt.Errorf("credential verification failed: %w", err)
+	}
+
+	// Store the verified credential
 	credID := uuid.New().String()
+
+	// Extract transports from the credential
+	transports := make([]string, len(credential.Transport))
+	for i, t := range credential.Transport {
+		transports[i] = string(t)
+	}
 
 	newCred := repository.WebAuthnCredential{
 		ID:              credID,
 		UserID:          userID,
-		CredentialID:    []byte("placeholder-credential-id"), // Would be from response
-		PublicKey:       []byte("placeholder-public-key"),    // Would be from response
-		AttestationType: "none",
-		AAGUID:          []byte{},
-		SignCount:       0,
+		CredentialID:    credential.ID,
+		PublicKey:       credential.PublicKey,
+		AttestationType: credential.AttestationType,
+		AAGUID:          credential.Authenticator.AAGUID,
+		SignCount:       int64(credential.Authenticator.SignCount),
 		Name:            credentialName,
-		Transports:      []string{"internal"},
+		Transports:      transports,
 		CreatedAt:       time.Now().UTC(),
 	}
 
@@ -328,16 +356,52 @@ func (s *WebAuthnService) FinishLogin(ctx context.Context, email, challengeID st
 		return "", fmt.Errorf("user not found")
 	}
 
-	// In a real implementation, you would parse the response and verify it
-	// For now, this is a placeholder that simulates successful login
-	// The actual implementation would use:
-	// credential, err := s.webAuthn.FinishLogin(wuser, sessionData, response)
+	// Load credentials
+	creds, err := s.webauthnRepo.ListCredentialsByUser(ctx, user.ID)
+	if err != nil || len(creds) == 0 {
+		return "", fmt.Errorf("no credentials found")
+	}
+
+	webauthnCreds := make([]webauthn.Credential, len(creds))
+	for i, cred := range creds {
+		webauthnCreds[i] = security.CredentialFromModel(
+			cred.CredentialID,
+			cred.PublicKey,
+			cred.SignCount,
+			cred.AttestationType,
+			cred.Transports,
+		)
+	}
+
+	wuser := security.WebAuthnUser{
+		ID:          user.ID,
+		DisplayName: func() string { if user.Username != nil { return *user.Username } else { return user.Email } }(),
+		Credentials: webauthnCreds,
+	}
+
+	// Reconstruct session data from stored challenge
+	sessionData := webauthn.SessionData{
+		Challenge: string(challenge.Challenge),
+	}
+
+	// Parse the credential assertion response from JSON
+	var assertionResponse protocol.ParsedCredentialAssertionData
+	if err := json.Unmarshal([]byte(response), &assertionResponse); err != nil {
+		return "", fmt.Errorf("invalid assertion response: %w", err)
+	}
+
+	// Validate the assertion using the WebAuthn library
+	credential, err := s.webAuthn.ValidateLogin(wuser, sessionData, &assertionResponse)
+	if err != nil {
+		return "", fmt.Errorf("authentication verification failed: %w", err)
+	}
 
 	// Clean up challenge
 	_ = s.webauthnRepo.DeleteChallenge(ctx, challengeID)
 
-	// Update sign count (would be from the credential in the response)
-	_ = s.webauthnRepo.UpdateSignCount(ctx, "placeholder", 1)
+	// Update sign count from the verified credential
+	credIDStr := base64.RawURLEncoding.EncodeToString(credential.ID)
+	_ = s.webauthnRepo.UpdateSignCount(ctx, credIDStr, int64(credential.Authenticator.SignCount))
 
 	// Log audit event
 	var userIDPtr = &user.ID

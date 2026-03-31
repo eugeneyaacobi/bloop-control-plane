@@ -127,10 +127,12 @@ func (r *mockWebAuthnRepo) CleanupExpiredChallenges(ctx context.Context) error {
 // Mock auth repository (minimal for WebAuthn tests)
 type mockAuthRepo struct {
 	users map[string]repository.UserWithCredentials
+	passwordHistory map[string][]string
 }
 
 func newMockAuthRepo() *mockAuthRepo {
-	return &mockAuthRepo{users: make(map[string]repository.UserWithCredentials)}
+	return &mockAuthRepo{users:          make(map[string]repository.UserWithCredentials),
+		passwordHistory: make(map[string][]string),}
 }
 
 func (r *mockAuthRepo) CreateUserWithCredentials(ctx context.Context, email, username, passwordHash, displayName string) (repository.UserWithCredentials, error) {
@@ -187,6 +189,14 @@ func (r *mockAuthRepo) SetVerified(ctx context.Context, userID string) error {
 	return nil
 }
 
+
+func (r *mockAuthRepo) GetPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	return []string{}, nil
+}
+
+func (r *mockAuthRepo) AddPasswordHistory(ctx context.Context, userID, passwordHash string) error {
+	return nil
+}
 func (r *mockAuthRepo) GetRoleByUserID(ctx context.Context, userID string) (string, error) {
 	return "customer", nil
 }

@@ -34,16 +34,18 @@ type mockUser struct {
 
 // Mock repositories
 type mockAuthRepo struct {
-	users      map[string]*mockUser
-	byEmail    map[string]*mockUser
-	byUsername map[string]*mockUser
+	users          map[string]*mockUser
+	byEmail        map[string]*mockUser
+	byUsername     map[string]*mockUser
+	passwordHistory map[string][]string // user_id -> password hashes
 }
 
 func newMockAuthRepo() *mockAuthRepo {
 	return &mockAuthRepo{
-		users:      make(map[string]*mockUser),
-		byEmail:    make(map[string]*mockUser),
-		byUsername: make(map[string]*mockUser),
+		users:          make(map[string]*mockUser),
+		byEmail:        make(map[string]*mockUser),
+		byUsername:     make(map[string]*mockUser),
+		passwordHistory: make(map[string][]string),
 	}
 }
 
@@ -163,6 +165,10 @@ func (r *mockAuthRepo) GetCredentialsByUserID(ctx context.Context, userID string
 func (r *mockAuthRepo) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
 	user, exists := r.users[userID]
 	if exists {
+		// Save old password to history
+		if user.passwordHash != "" {
+			_ = r.AddPasswordHistory(ctx, userID, user.passwordHash)
+		}
 		user.passwordHash = passwordHash
 	}
 	return nil
@@ -207,6 +213,36 @@ func (r *mockAuthRepo) GetRoleByUserID(ctx context.Context, userID string) (stri
 		return user.role, nil
 	}
 	return "customer", nil
+}
+
+func (r *mockAuthRepo) GetPasswordHistory(ctx context.Context, userID string, limit int) ([]string, error) {
+	history, exists := r.passwordHistory[userID]
+	if !exists {
+		return []string{}, nil
+	}
+	if len(history) <= limit {
+		result := make([]string, len(history))
+		for i, h := range history {
+			result[len(history)-1-i] = h
+		}
+		return result, nil
+	}
+	result := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		result[i] = history[len(history)-1-i]
+	}
+	return result, nil
+}
+
+func (r *mockAuthRepo) AddPasswordHistory(ctx context.Context, userID, passwordHash string) error {
+	if r.passwordHistory[userID] == nil {
+		r.passwordHistory[userID] = []string{}
+	}
+	r.passwordHistory[userID] = append(r.passwordHistory[userID], passwordHash)
+	if len(r.passwordHistory[userID]) > 10 {
+		r.passwordHistory[userID] = r.passwordHistory[userID][len(r.passwordHistory[userID])-10:]
+	}
+	return nil
 }
 
 type mockLockoutRepo struct {
