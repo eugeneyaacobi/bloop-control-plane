@@ -43,6 +43,8 @@ Full authentication system with password-based auth, WebAuthn 2FA, API token man
 | `POST /api/auth/register` | Create account (email + username + password) |
 | `POST /api/auth/login` | Password login, returns session cookie |
 | `POST /api/auth/refresh` | Refresh session token |
+| `POST /api/auth/forgot-password` | Request password reset email |
+| `POST /api/auth/reset-password` | Reset password with token |
 | `GET /api/session/me` | Get current session |
 | `POST /api/session/logout` | Clear session |
 
@@ -73,6 +75,38 @@ Full authentication system with password-based auth, WebAuthn 2FA, API token man
 | `GET /healthz` | Health check |
 | `GET /readyz` | Readiness check |
 | `GET /metricsz` | Request counters |
+
+### Onboarding Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/onboarding/steps` | Onboarding step status |
+| `POST /api/onboarding/signup/request` | Request signup |
+| `POST /api/onboarding/signup/verify` | Verify signup token |
+
+### Customer Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/customer/workspace` | Customer workspace overview |
+| `GET /api/customer/tunnels` | List tunnels |
+| `GET /api/customer/tunnels/{id}` | Tunnel detail |
+| `POST /api/customer/tunnels` | Create tunnel |
+| `PUT /api/customer/tunnels/{id}` | Update tunnel |
+| `DELETE /api/customer/tunnels/{id}` | Delete tunnel |
+| `POST /api/customer/tunnels/validate` | Validate tunnel config |
+| `GET /api/customer/tunnels/{id}/status` | Tunnel runtime status |
+| `GET /api/customer/config/schema` | Configuration schema |
+| `POST /api/customer/enrollment/verify` | Verify enrollment |
+
+### Admin Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/admin/overview` | Platform overview |
+| `GET /api/admin/users` | User inventory |
+| `GET /api/admin/tunnels` | Tunnel inventory |
+| `GET /api/admin/review-queue` | Review queue |
 
 ### Security Features
 
@@ -187,4 +221,4 @@ Notes:
 
 ## Status
 
-Auth system, token management, WebAuthn 2FA, and tunnel CRUD shipped. See `specs/004-auth-tokens-webauthn/spec.md` for details.
+Auth system, token management, WebAuthn 2FA, password reset, email verification, and tunnel CRUD shipped. See `specs/` for details.
