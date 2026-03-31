@@ -38,7 +38,11 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, toEmail, rawT
 	if s.cfg.SMTPUser != "" {
 		auth = smtp.PlainAuth("", s.cfg.SMTPUser, s.cfg.SMTPPassword, s.cfg.SMTPHost)
 	}
-	return smtp.SendMail(addr, auth, s.cfg.SMTPFrom, []string{toEmail}, body)
+	err := smtp.SendMail(addr, auth, s.cfg.SMTPFrom, []string{toEmail}, body)
+	if err != nil {
+		fmt.Printf("ERROR SendPasswordResetEmail: addr=%s user=%s to=%s err=%v\n", addr, s.cfg.SMTPUser, toEmail, err)
+	}
+	return err
 }
 
 func (s *EmailService) SendVerificationEmail(ctx context.Context, toEmail, token string) error {
