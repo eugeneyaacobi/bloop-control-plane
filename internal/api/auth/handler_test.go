@@ -377,7 +377,7 @@ func TestRegisterSuccess(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
@@ -420,7 +420,7 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Pre-create user
 	hashedPassword, _ := security.HashPassword("Password123!")
@@ -446,7 +446,7 @@ func TestRegisterWeakPassword(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
@@ -468,7 +468,7 @@ func TestRegisterMissingFields(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
@@ -521,7 +521,7 @@ func TestLoginSuccess(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user with known password
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
@@ -564,7 +564,7 @@ func TestLoginWrongPassword(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user with known password
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
@@ -600,7 +600,7 @@ func TestLoginUserNotFound(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 
@@ -632,7 +632,7 @@ func TestLoginLockedAccount(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user with known password
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
@@ -666,7 +666,7 @@ func TestLoginRateLimited(t *testing.T) {
 		AccountLockoutThreshold: 20,
 		AccountLockoutDuration:  time.Hour,
 	}
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
@@ -728,7 +728,7 @@ func TestRefreshSuccess(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	// Create user
 	hashedPassword, _ := security.HashPassword("SecurePassword123!")
@@ -797,7 +797,7 @@ func TestRefreshUserNotFound(t *testing.T) {
 	auditRepo := newMockAuditRepo()
 	tokenMgr := newTestTokenManager()
 	cfg := newTestConfig()
-	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr)
+	authService := service.NewAuthService(authRepo, auditRepo, lockoutRepo, cfg, tokenMgr, nil)
 
 	h := NewHandler(authService, nil, tokenMgr, "session", false, "")
 

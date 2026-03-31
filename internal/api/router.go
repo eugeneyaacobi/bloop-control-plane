@@ -178,8 +178,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 	// Auth routes (register, login, refresh)
 	if deps.AuthRepo != nil && deps.AuditRepo != nil && deps.LockoutRepo != nil && tokenManager != nil {
-		authService := service.NewAuthService(deps.AuthRepo, deps.AuditRepo, deps.LockoutRepo, cfg, tokenManager)
 		emailSvc := service.NewEmailService(cfg)
+		authService := service.NewAuthService(deps.AuthRepo, deps.AuditRepo, deps.LockoutRepo, cfg, tokenManager, emailSvc)
 		var passwordResetService *service.PasswordResetService
 		if deps.PasswordResetRepo != nil {
 			passwordResetService = service.NewPasswordResetService(deps.PasswordResetRepo, deps.AuthRepo, deps.AuditRepo, emailSvc, cfg)
