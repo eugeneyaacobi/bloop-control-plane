@@ -42,9 +42,12 @@ type ReviewFlag struct {
 }
 
 type SignupRequest struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	State string `json:"state"`
+	ID             string    `json:"id"`
+	Email          string    `json:"email"`
+	State          string    `json:"state"`
+	DisplayName    string    `json:"display_name,omitempty"`
+	HashedPassword string    `json:"-"`
+	CreatedAt      time.Time `json:"created_at,omitempty"`
 }
 
 type RuntimeInstallation struct {

@@ -45,7 +45,7 @@ func (r *PostgresSignupRepository) CreateEmailVerification(ctx context.Context, 
 func (r *PostgresSignupRepository) FindVerificationByTokenHash(ctx context.Context, tokenHash string) (*EmailVerification, *models.SignupRequest, error) {
 	query := `
 		SELECT ev.id, ev.signup_request_id, ev.token_hash, ev.state, ev.expires_at, ev.verified_at,
-		       sr.id, sr.email, sr.state
+		       sr.id, sr.email, sr.state, sr.display_name, sr.hashed_password
 		FROM email_verifications ev
 		JOIN signup_requests sr ON sr.id = ev.signup_request_id
 		WHERE ev.token_hash = $1
@@ -63,6 +63,8 @@ func (r *PostgresSignupRepository) FindVerificationByTokenHash(ctx context.Conte
 		&signup.ID,
 		&signup.Email,
 		&signup.State,
+		&signup.DisplayName,
+		&signup.HashedPassword,
 	); err != nil {
 		return nil, nil, nil
 	}
